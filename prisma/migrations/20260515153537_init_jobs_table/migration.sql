@@ -1,0 +1,25 @@
+-- CreateTable
+CREATE TABLE "Job" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "type" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'processing',
+    "progress" INTEGER NOT NULL DEFAULT 0,
+    "fileName" TEXT,
+    "fileSize" INTEGER,
+    "language" TEXT,
+    "duration" REAL,
+    "transcript" TEXT,
+    "segments" TEXT,
+    "sourceText" TEXT,
+    "translatedText" TEXT,
+    "sourceLang" TEXT,
+    "targetLang" TEXT,
+    "engine" TEXT,
+    "text" TEXT,
+    "voice" TEXT,
+    "audioUrl" TEXT,
+    "errorMsg" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL
+);
