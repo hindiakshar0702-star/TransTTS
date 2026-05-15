@@ -73,7 +73,7 @@ export default function PricingPage() {
 
   const faqs = [
     {
-      q: "Is SpeechTrans AI really free?",
+      q: "Is TransTTS AI really free?",
       a: "Yes! The Free plan gives you 5 transcriptions per day, unlimited translations, and access to all 18 Neural TTS voices — completely free, no credit card required.",
     },
     {
@@ -221,7 +221,7 @@ export default function PricingPage() {
       <footer className="footer">
         <div className="container">
           <div className="footer-inner">
-            <span>© 2026 SpeechTrans AI. All rights reserved.</span>
+            <span>© 2026 TransTTS AI. All rights reserved.</span>
             <div style={{ display: "flex", gap: 16 }}>
               <Link href="/transcribe">Transcribe</Link>
               <Link href="/translate">Translate</Link>

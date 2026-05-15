@@ -20,7 +20,7 @@ export default function Navbar() {
       <div className="nav-inner">
         <Link href="/" className="logo">
           <div className="logo-icon">🎙️</div>
-          SpeechTrans<span style={{ color: "var(--accent)" }}>AI</span>
+          TransTTS<span style={{ color: "var(--accent)" }}>AI</span>
         </Link>
 
         {/* Desktop nav */}

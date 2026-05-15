@@ -3,7 +3,7 @@ import "./globals.css";
 import { ToastProvider } from "@/components/Toast";
 
 export const metadata: Metadata = {
-  title: "SpeechTrans AI — Transcribe, Translate & Generate Voice",
+  title: "TransTTS AI — Transcribe, Translate & Generate Voice",
   description:
     "AI-powered platform using OpenAI Whisper to transcribe audio/video, translate to Hindi & 99+ languages, and generate natural AI voices.",
 };

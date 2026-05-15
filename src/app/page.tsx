@@ -170,7 +170,7 @@ export default function HomePage() {
       <footer className="footer">
         <div className="container">
           <div className="footer-inner">
-            <span>© 2026 SpeechTrans AI. All rights reserved.</span>
+            <span>© 2026 TransTTS AI. All rights reserved.</span>
             <div style={{ display: "flex", gap: 16 }}>
               <Link href="/transcribe">Transcribe</Link>
               <Link href="/translate">Translate</Link>

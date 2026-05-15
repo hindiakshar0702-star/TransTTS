@@ -142,7 +142,7 @@ export default function ContactPage() {
               <div className="glass-card fade-in" style={{ marginTop: 24, textAlign: "center" }}>
                 <h3 style={{ marginBottom: 12 }}>📞 Prefer to talk?</h3>
                 <p style={{ color: "var(--text-dim)", marginBottom: 4 }}>
-                  Email us directly: <strong style={{ color: "var(--accent)" }}>enterprise@speechtrans.ai</strong>
+                  Email us directly: <strong style={{ color: "var(--accent)" }}>enterprise@transtts.ai</strong>
                 </p>
                 <p style={{ color: "var(--text-dim)" }}>
                   Or schedule a call: <strong style={{ color: "var(--accent)" }}>Mon-Fri, 10AM - 6PM IST</strong>
