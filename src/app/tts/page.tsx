@@ -77,8 +77,17 @@ function TTSContent() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "TTS generation failed");
+        let errorMsg = "TTS generation failed";
+        try {
+          const text = await res.text();
+          try {
+            const data = JSON.parse(text);
+            errorMsg = data.error || errorMsg;
+          } catch (e) {
+            errorMsg = `Server error: ${res.status} ${res.statusText}`;
+          }
+        } catch (e) {}
+        throw new Error(errorMsg);
       }
 
       const data = await res.json();

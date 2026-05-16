@@ -74,8 +74,21 @@ export default function TranscribePage() {
       clearInterval(interval);
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Transcription failed");
+        let errorMsg = "Transcription failed";
+        try {
+          const text = await res.text();
+          try {
+            const data = JSON.parse(text);
+            errorMsg = data.error || errorMsg;
+          } catch (e) {
+            if (res.status === 413 || text.includes("Request Entity Too Large")) {
+              errorMsg = "File too large. Maximum size is 25MB or determined by your server limits.";
+            } else {
+              errorMsg = `Server error: ${res.status} ${res.statusText}`;
+            }
+          }
+        } catch (e) {}
+        throw new Error(errorMsg);
       }
 
       const data = await res.json();

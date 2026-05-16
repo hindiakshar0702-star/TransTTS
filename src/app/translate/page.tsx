@@ -53,8 +53,17 @@ function TranslateContent() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Translation failed");
+        let errorMsg = "Translation failed";
+        try {
+          const text = await res.text();
+          try {
+            const data = JSON.parse(text);
+            errorMsg = data.error || errorMsg;
+          } catch (e) {
+            errorMsg = `Server error: ${res.status} ${res.statusText}`;
+          }
+        } catch (e) {}
+        throw new Error(errorMsg);
       }
 
       const data = await res.json();

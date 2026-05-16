@@ -42,7 +42,9 @@ export default function DashboardPage() {
     try {
       const typeParam = filter === "all" ? "" : `?type=${filter}`;
       const res = await fetch(`/api/jobs${typeParam}`);
-      const data = await res.json();
+      if (!res.ok) throw new Error("Failed to fetch jobs");
+      const text = await res.text();
+      const data = JSON.parse(text);
       setJobs(data.jobs || []);
       setStats(data.stats || { total: 0, transcriptions: 0, translations: 0, ttsGenerations: 0, totalMinutes: 0 });
     } catch { /* ignore */ }
