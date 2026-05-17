@@ -1,5 +1,5 @@
 {
-  "name": "temp-app",
+  "name": "TransTTS",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
+    "@vercel/analytics": "^2.0.1",
     "msedge-tts": "^2.0.5",
     "next": "16.2.6",
     "openai": "^6.37.0",

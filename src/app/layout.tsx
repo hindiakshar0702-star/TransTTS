@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ToastProvider } from "@/components/Toast";
+import { Analytics } from "@vercel/analytics/react";
 
 export const metadata: Metadata = {
   title: "TransTTS AI — Transcribe, Translate & Generate Voice",
@@ -22,6 +23,7 @@ export default function RootLayout({
         <ToastProvider>
           <div className="page-wrapper">{children}</div>
         </ToastProvider>
+        <Analytics />
       </body>
     </html>
   );
