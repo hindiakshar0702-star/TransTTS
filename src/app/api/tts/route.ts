@@ -57,21 +57,21 @@ export async function POST(req: NextRequest) {
 
     const generatedDir = getGeneratedDir();
     const fileId = generateId();
-    const finalPath = path.join(generatedDir, `${fileId}.mp3`);
+    const tempDir = path.join(generatedDir, fileId);
+    fs.mkdirSync(tempDir, { recursive: true });
 
     const tts = new MsEdgeTTS();
     await tts.setMetadata(msVoice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-    const filePath = await tts.toFile(finalPath, text);
+    await tts.toFile(tempDir, text);
 
-    // Verify the file was generated (toFile returns the output path)
-    const outputPath = filePath || finalPath;
-    if (!fs.existsSync(outputPath)) {
+    const generatedFile = path.join(tempDir, "audio.mp3");
+    const finalPath = path.join(generatedDir, `${fileId}.mp3`);
+
+    if (fs.existsSync(generatedFile)) {
+      fs.renameSync(generatedFile, finalPath);
+      try { fs.rmdirSync(tempDir); } catch { /* ignore */ }
+    } else {
       throw new Error("Audio file was not generated");
-    }
-
-    // If toFile wrote to a different path than expected, move it
-    if (outputPath !== finalPath && fs.existsSync(outputPath)) {
-      fs.renameSync(outputPath, finalPath);
     }
 
     const audioUrl = `/api/tts/audio/${fileId}`;
