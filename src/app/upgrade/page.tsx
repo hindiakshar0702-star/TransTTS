@@ -1,8 +1,9 @@
 "use client";
-import { useState, useEffect, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState, useEffect, Suspense, useCallback } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
+import { useToast } from "@/components/Toast";
 
 type PlanId = "starter" | "pro" | "enterprise";
 type Cycle = "monthly" | "yearly";
@@ -73,6 +74,72 @@ const PLANS: Record<PlanId, {
   },
 };
 
+const RAZORPAY_SCRIPT = "https://checkout.razorpay.com/v1/checkout.js";
+
+/* ------------------------------------------------------------------ */
+/* Razorpay typings                                                    */
+/* ------------------------------------------------------------------ */
+
+interface RazorpaySuccessResponse {
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}
+
+interface RazorpayOptions {
+  key: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description: string;
+  order_id: string;
+  prefill?: { name?: string; email?: string; contact?: string };
+  notes?: Record<string, string>;
+  theme?: { color?: string };
+  handler: (response: RazorpaySuccessResponse) => void;
+  modal?: { ondismiss?: () => void };
+}
+
+interface RazorpayInstance {
+  open: () => void;
+  on: (event: string, cb: (resp: { error: { description?: string } }) => void) => void;
+}
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: RazorpayOptions) => RazorpayInstance;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Utilities                                                           */
+/* ------------------------------------------------------------------ */
+
+function loadRazorpayScript(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined") return resolve(false);
+    if (window.Razorpay) return resolve(true);
+    const existing = document.querySelector<HTMLScriptElement>(
+      `script[src="${RAZORPAY_SCRIPT}"]`
+    );
+    if (existing) {
+      existing.addEventListener("load", () => resolve(true), { once: true });
+      existing.addEventListener("error", () => resolve(false), { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = RAZORPAY_SCRIPT;
+    script.async = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Page                                                                */
+/* ------------------------------------------------------------------ */
+
 export default function UpgradePage() {
   return (
     <Suspense fallback={<div style={{ minHeight: "100vh", background: "var(--bg)" }} />}>
@@ -83,16 +150,29 @@ export default function UpgradePage() {
 
 function UpgradeContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const { showToast } = useToast();
+
   const initialPlan = (searchParams.get("plan") as PlanId) || "pro";
   const [cycle, setCycle] = useState<Cycle>("monthly");
   const [selected, setSelected] = useState<PlanId>(
     PLANS[initialPlan] ? initialPlan : "pro"
   );
 
+  // Customer details for Razorpay prefill
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+
   useEffect(() => {
     const p = searchParams.get("plan") as PlanId;
     if (p && PLANS[p]) setSelected(p);
   }, [searchParams]);
+
+  // Pre-load Razorpay script in background so checkout opens instantly
+  useEffect(() => {
+    loadRazorpayScript().catch(() => {});
+  }, []);
 
   const plan = PLANS[selected];
   const price = cycle === "monthly" ? plan.monthly : plan.yearly;
@@ -104,6 +184,119 @@ function UpgradeContent() {
       : 0;
   const gst = Math.round(price * 0.18);
   const total = price + gst;
+
+  /* -------------------------------------------------------------- */
+  /* Pay handler                                                     */
+  /* -------------------------------------------------------------- */
+
+  const handlePay = useCallback(async () => {
+    if (loading) return;
+
+    if (!name.trim()) {
+      showToast("Please enter your full name", "error");
+      return;
+    }
+    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showToast("Please enter a valid email address", "error");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // 1. Ensure Razorpay SDK is available
+      const ok = await loadRazorpayScript();
+      if (!ok || !window.Razorpay) {
+        throw new Error("Could not load Razorpay. Check your internet connection.");
+      }
+
+      // 2. Create order on the server
+      const orderRes = await fetch("/api/razorpay/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: selected, cycle, name, email }),
+      });
+
+      if (!orderRes.ok) {
+        const data = await orderRes.json().catch(() => ({}));
+        throw new Error(data.error || `Failed to create order (${orderRes.status})`);
+      }
+
+      const { orderId, amount, currency, keyId, planName } = await orderRes.json();
+      if (!orderId || !keyId) {
+        throw new Error("Invalid response from payment server");
+      }
+
+      // 3. Open Razorpay checkout
+      const rzp = new window.Razorpay({
+        key: keyId,
+        amount,
+        currency,
+        name: "TransTTS AI",
+        description: `${planName} Plan — ${cycle === "yearly" ? "Yearly" : "Monthly"}`,
+        order_id: orderId,
+        prefill: { name, email },
+        notes: { plan: selected, cycle },
+        theme: { color: "#6366f1" },
+        modal: {
+          ondismiss: () => {
+            setLoading(false);
+            showToast("Payment cancelled", "info");
+          },
+        },
+        handler: async (response) => {
+          // 4. Verify on server
+          try {
+            const verifyRes = await fetch("/api/razorpay/verify", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(response),
+            });
+            const verifyData = await verifyRes.json();
+
+            if (!verifyRes.ok || !verifyData.verified) {
+              showToast(
+                verifyData.error || "Payment verification failed. Contact support.",
+                "error"
+              );
+              setLoading(false);
+              return;
+            }
+
+            // 5. Redirect to success page
+            const params = new URLSearchParams({
+              orderId: verifyData.orderId,
+              plan: verifyData.plan,
+              cycle: verifyData.cycle,
+              paymentId: response.razorpay_payment_id,
+            });
+            router.push(`/upgrade/success?${params.toString()}`);
+          } catch (err) {
+            showToast(
+              err instanceof Error ? err.message : "Verification request failed",
+              "error"
+            );
+            setLoading(false);
+          }
+        },
+      });
+
+      rzp.on("payment.failed", (resp) => {
+        showToast(
+          resp.error?.description || "Payment failed. Please try again.",
+          "error"
+        );
+        setLoading(false);
+      });
+
+      rzp.open();
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Something went wrong",
+        "error"
+      );
+      setLoading(false);
+    }
+  }, [loading, name, email, selected, cycle, router, showToast]);
 
   return (
     <>
@@ -123,6 +316,7 @@ function UpgradeContent() {
                   key={id}
                   className={`tab ${selected === id ? "active" : ""}`}
                   onClick={() => setSelected(id)}
+                  disabled={loading}
                 >
                   {PLANS[id].emoji} {PLANS[id].name}
                 </button>
@@ -135,12 +329,14 @@ function UpgradeContent() {
                 <button
                   className={`billing-option ${cycle === "monthly" ? "active" : ""}`}
                   onClick={() => setCycle("monthly")}
+                  disabled={loading}
                 >
                   Monthly
                 </button>
                 <button
                   className={`billing-option ${cycle === "yearly" ? "active" : ""}`}
                   onClick={() => setCycle("yearly")}
+                  disabled={loading}
                 >
                   Yearly
                   {savedPercent > 0 && <span className="save-badge">Save {savedPercent}%</span>}
@@ -168,6 +364,42 @@ function UpgradeContent() {
               ))}
             </div>
           </div>
+
+          {/* Customer details (for non-enterprise) */}
+          {selected !== "enterprise" && (
+            <div className="glass-card fade-in" style={{ marginBottom: 24 }}>
+              <h3 style={{ marginBottom: 20 }}>👤 Your Details</h3>
+              <div className="form-grid">
+                <div>
+                  <label className="form-label">Full Name *</label>
+                  <input
+                    type="text"
+                    className="select-input"
+                    placeholder="John Doe"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    disabled={loading}
+                    autoComplete="name"
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Email *</label>
+                  <input
+                    type="email"
+                    className="select-input"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={loading}
+                    autoComplete="email"
+                  />
+                </div>
+              </div>
+              <p className="form-hint" style={{ marginTop: 8 }}>
+                Receipt &amp; account access will be sent to this email
+              </p>
+            </div>
+          )}
 
           {/* Order Summary + Razorpay CTA */}
           <div className="glass-card fade-in">
@@ -226,8 +458,17 @@ function UpgradeContent() {
                 💬 Contact Sales for Custom Pricing
               </Link>
             ) : (
-              <button className="btn btn-primary btn-large" style={{ width: "100%" }}>
-                🔒 Pay ₹{total.toLocaleString()} with Razorpay
+              <button
+                className="btn btn-primary btn-large"
+                style={{ width: "100%" }}
+                onClick={handlePay}
+                disabled={loading}
+              >
+                {loading ? (
+                  <><span className="spinner"></span> Processing...</>
+                ) : (
+                  <>🔒 Pay ₹{total.toLocaleString()} with Razorpay</>
+                )}
               </button>
             )}
 
