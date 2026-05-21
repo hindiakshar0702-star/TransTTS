@@ -31,6 +31,7 @@ function TranslateContent() {
   useEffect(() => {
     const text = searchParams.get("text");
     if (text) { setSourceText(text); setStatus("idle"); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   const handleReset = () => {

@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = env("DATABASE_URL")
 }
 
 model Job {
@@ -37,4 +37,33 @@ model Job {
   errorMsg   String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+}
+
+model Order {
+  id                String   @id @default(uuid())
+  razorpayOrderId   String   @unique
+  razorpayPaymentId String?
+  razorpaySignature String?
+
+  plan              String   // "starter" | "pro" | "enterprise"
+  cycle             String   // "monthly" | "yearly"
+  amount            Int      // in paise (₹1 = 100 paise)
+  currency          String   @default("INR")
+  status            String   @default("created") // "created" | "paid" | "failed" | "refunded"
+
+  userEmail         String?
+  userName          String?
+
+  // Subscription validity (set when paid)
+  validUntil        DateTime?
+
+  // Razorpay webhook payloads (raw JSON for audit)
+  webhookEvent      String?
+  errorMsg          String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([userEmail])
+  @@index([status])
 }

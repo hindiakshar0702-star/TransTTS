@@ -36,7 +36,7 @@ export default function TranscribePage() {
     setDetectedLang(""); setDuration(0); setError("");
   };
 
-  const handleFile = (f: File) => {
+  const handleFile = useCallback((f: File) => {
     if (f.size > 25 * 1024 * 1024) {
       setError("File too large. Maximum 25MB for Whisper API.");
       return;
@@ -45,14 +45,14 @@ export default function TranscribePage() {
     setError("");
     setTranscript("");
     setSegments([]);
-  };
+  }, [setTranscript, setSegments]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     const f = e.dataTransfer.files[0];
     if (f) handleFile(f);
-  }, []);
+  }, [handleFile]);
 
   const handleTranscribe = async () => {
     if (!file) return;

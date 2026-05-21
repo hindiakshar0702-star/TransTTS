@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
+  let jobId: string | null = null;
   try {
     const { text, sourceLang, targetLang } = await req.json();
 
@@ -24,6 +25,7 @@ export async function POST(req: NextRequest) {
         targetLang,
       },
     });
+    jobId = job.id;
 
     // Use FREE MyMemory Translation API
     const src = sourceLang === "auto" ? "en" : sourceLang;
@@ -71,6 +73,15 @@ export async function POST(req: NextRequest) {
   } catch (error: unknown) {
     console.error("Translation error:", error);
     const message = error instanceof Error ? error.message : "Translation failed";
+
+    // Update job as failed
+    if (jobId) {
+      await prisma.job.update({
+        where: { id: jobId },
+        data: { status: "error", errorMsg: message },
+      }).catch(() => {});
+    }
+
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

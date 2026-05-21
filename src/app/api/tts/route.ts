@@ -29,6 +29,7 @@ const VOICES: Record<string, string> = {
 };
 
 export async function POST(req: NextRequest) {
+  let jobId: string | null = null;
   try {
     const { text, voice } = await req.json();
 
@@ -52,6 +53,7 @@ export async function POST(req: NextRequest) {
         voice: msVoice,
       },
     });
+    jobId = job.id;
 
     const generatedDir = getGeneratedDir();
     const fileId = generateId();
@@ -89,6 +91,15 @@ export async function POST(req: NextRequest) {
   } catch (error: unknown) {
     console.error("TTS error:", error);
     const message = error instanceof Error ? error.message : "TTS generation failed";
+
+    // Update job as failed
+    if (jobId) {
+      await prisma.job.update({
+        where: { id: jobId },
+        data: { status: "error", errorMsg: message },
+      }).catch(() => {});
+    }
+
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
