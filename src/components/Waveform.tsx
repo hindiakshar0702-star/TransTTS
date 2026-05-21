@@ -12,12 +12,13 @@ export default function Waveform({ audioRef, isPlaying }: WaveformProps) {
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const animRef = useRef<number>(0);
   const ctxRef = useRef<AudioContext | null>(null);
+  const initializedRef = useRef(false);
 
   useEffect(() => {
-    if (!audioRef.current) return;
+    if (!audioRef.current || initializedRef.current) return;
 
-    // Create audio context only once
-    if (!ctxRef.current) {
+    try {
+      // Create audio context only once
       const ctx = new AudioContext();
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 64;
@@ -27,6 +28,10 @@ export default function Waveform({ audioRef, isPlaying }: WaveformProps) {
       ctxRef.current = ctx;
       analyserRef.current = analyser;
       sourceRef.current = source;
+      initializedRef.current = true;
+    } catch (err) {
+      // MediaElementAudioSourceNode may already be created for this element
+      console.warn("Waveform: AudioContext setup failed:", err);
     }
   }, [audioRef]);
 
@@ -35,6 +40,11 @@ export default function Waveform({ audioRef, isPlaying }: WaveformProps) {
       cancelAnimationFrame(animRef.current);
       setBars(Array(32).fill(4));
       return;
+    }
+
+    // Resume AudioContext if suspended (browser autoplay policy)
+    if (ctxRef.current && ctxRef.current.state === "suspended") {
+      ctxRef.current.resume();
     }
 
     const analyser = analyserRef.current;

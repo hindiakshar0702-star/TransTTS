@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import ToolNav from "@/components/ToolNav";
@@ -38,7 +38,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const { showToast } = useToast();
 
-  const fetchJobs = async () => {
+  const fetchJobs = useCallback(async () => {
     try {
       const typeParam = filter === "all" ? "" : `?type=${filter}`;
       const res = await fetch(`/api/jobs${typeParam}`);
@@ -49,9 +49,9 @@ export default function DashboardPage() {
       setStats(data.stats || { total: 0, transcriptions: 0, translations: 0, ttsGenerations: 0, totalMinutes: 0 });
     } catch { /* ignore */ }
     setLoading(false);
-  };
+  }, [filter]);
 
-  useEffect(() => { fetchJobs(); }, [filter]);
+  useEffect(() => { fetchJobs(); }, [fetchJobs]);
 
   const handleDelete = async (id: string) => {
     try {

@@ -54,6 +54,7 @@ function TTSContent() {
   useEffect(() => {
     const t = searchParams.get("text");
     if (t) { setText(t); setStatus("idle"); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   const handleReset = () => {
@@ -79,9 +80,9 @@ function TTSContent() {
       if (!res.ok) {
         let errorMsg = "TTS generation failed";
         try {
-          const text = await res.text();
+          const responseText = await res.text();
           try {
-            const data = JSON.parse(text);
+            const data = JSON.parse(responseText);
             errorMsg = data.error || errorMsg;
           } catch (e) {
             errorMsg = `Server error: ${res.status} ${res.statusText}`;

@@ -29,6 +29,7 @@ const VOICES: Record<string, string> = {
 };
 
 export async function POST(req: NextRequest) {
+  let jobId: string | null = null;
   try {
     const { text, voice } = await req.json();
 
@@ -52,24 +53,25 @@ export async function POST(req: NextRequest) {
         voice: msVoice,
       },
     });
+    jobId = job.id;
 
     const generatedDir = getGeneratedDir();
     const fileId = generateId();
-    const tempDir = path.join(generatedDir, fileId);
-    fs.mkdirSync(tempDir, { recursive: true });
+    const finalPath = path.join(generatedDir, `${fileId}.mp3`);
 
     const tts = new MsEdgeTTS();
     await tts.setMetadata(msVoice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-    await tts.toFile(tempDir, text);
+    const filePath = await tts.toFile(finalPath, text);
 
-    const generatedFile = path.join(tempDir, "audio.mp3");
-    const finalPath = path.join(generatedDir, `${fileId}.mp3`);
-
-    if (fs.existsSync(generatedFile)) {
-      fs.renameSync(generatedFile, finalPath);
-      try { fs.rmdirSync(tempDir); } catch { /* ignore */ }
-    } else {
+    // Verify the file was generated (toFile returns the output path)
+    const outputPath = filePath || finalPath;
+    if (!fs.existsSync(outputPath)) {
       throw new Error("Audio file was not generated");
+    }
+
+    // If toFile wrote to a different path than expected, move it
+    if (outputPath !== finalPath && fs.existsSync(outputPath)) {
+      fs.renameSync(outputPath, finalPath);
     }
 
     const audioUrl = `/api/tts/audio/${fileId}`;
@@ -89,6 +91,15 @@ export async function POST(req: NextRequest) {
   } catch (error: unknown) {
     console.error("TTS error:", error);
     const message = error instanceof Error ? error.message : "TTS generation failed";
+
+    // Update job as failed
+    if (jobId) {
+      await prisma.job.update({
+        where: { id: jobId },
+        data: { status: "error", errorMsg: message },
+      }).catch(() => {});
+    }
+
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
