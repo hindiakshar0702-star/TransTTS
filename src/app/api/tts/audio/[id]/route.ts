@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
+import { getGeneratedDir } from "@/lib/server-utils";
 
 export async function GET(
   req: NextRequest,
@@ -8,7 +9,13 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const generatedDir = path.join(process.cwd(), "generated");
+
+    // Validate id to prevent path traversal
+    if (!id || /[^a-zA-Z0-9\-]/.test(id)) {
+      return NextResponse.json({ error: "Invalid audio ID" }, { status: 400 });
+    }
+
+    const generatedDir = getGeneratedDir();
     const filePath = path.join(generatedDir, `${id}.mp3`);
 
     if (!fs.existsSync(filePath)) {
