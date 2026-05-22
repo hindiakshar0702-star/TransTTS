@@ -6,19 +6,43 @@ import Navbar from "@/components/Navbar";
 
 interface OrderView {
   id: string;
-  razorpayOrderId: string;
+  provider: "razorpay" | "phonepe";
+  // Generic display
+  externalOrderId: string | null;
+  paymentId: string | null;
+  // Razorpay specifics
+  razorpayOrderId: string | null;
   razorpayPaymentId: string | null;
+  // PhonePe specifics
+  phonepeMerchantTransactionId: string | null;
+  phonepeTransactionId: string | null;
+  phonepeProviderReferenceId: string | null;
+  // Plan / billing
   plan: string;
   planName: string;
   cycle: string;
   amount: number; // paise
   currency: string;
   status: string;
+  // Customer
   userEmail: string | null;
   userName: string | null;
+  userPhone: string | null;
+  // Validity
   validUntil: string | null;
   createdAt: string;
+  errorMsg: string | null;
 }
+
+const PROVIDER_LABEL: Record<string, string> = {
+  razorpay: "Razorpay",
+  phonepe: "PhonePe",
+};
+
+const PROVIDER_EMOJI: Record<string, string> = {
+  razorpay: "💳",
+  phonepe: "📱",
+};
 
 export default function UpgradeSuccessPage() {
   return (
@@ -33,7 +57,10 @@ function SuccessContent() {
   const orderId = searchParams.get("orderId");
   const fallbackPlan = searchParams.get("plan");
   const fallbackCycle = searchParams.get("cycle");
-  const paymentId = searchParams.get("paymentId");
+  const fallbackPaymentId = searchParams.get("paymentId");
+  const fallbackProvider = (searchParams.get("provider") || "").toLowerCase();
+  const flagPending = searchParams.get("pending") === "1";
+  const flagFailed = searchParams.get("failed") === "1";
 
   const [order, setOrder] = useState<OrderView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,7 +74,9 @@ function SuccessContent() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/razorpay/order/${encodeURIComponent(orderId)}`);
+        const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+          cache: "no-store",
+        });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
           throw new Error(data.error || `Could not fetch order (${res.status})`);
@@ -67,7 +96,7 @@ function SuccessContent() {
     };
   }, [orderId]);
 
-  /* ------------------ Render states ----------------- */
+  /* ---------------------- Render states ---------------------- */
 
   // 1) Direct landing without orderId
   if (!orderId) {
@@ -112,7 +141,7 @@ function SuccessContent() {
     );
   }
 
-  // 3) Error / pending state — order not paid yet (e.g. webhook still processing)
+  // 3) No DB record OR fetch error — show fallback "confirming" UI
   if (error || !order) {
     return (
       <>
@@ -125,9 +154,14 @@ function SuccessContent() {
               <p style={{ color: "var(--text-dim)", marginBottom: 8 }}>
                 {error || "We couldn't load your order details right now."}
               </p>
-              {paymentId && (
+              {fallbackProvider && (
+                <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: 8 }}>
+                  Provider: <strong>{PROVIDER_LABEL[fallbackProvider] || fallbackProvider}</strong>
+                </p>
+              )}
+              {fallbackPaymentId && (
                 <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: 20 }}>
-                  Payment ID: <code>{paymentId}</code>
+                  Payment ID: <code>{fallbackPaymentId}</code>
                 </p>
               )}
               {(fallbackPlan || fallbackCycle) && (
@@ -154,7 +188,50 @@ function SuccessContent() {
     );
   }
 
-  // 4) Success
+  // 4) Failed state — show retry CTA
+  const isFailed = order.status === "failed" || flagFailed;
+  if (isFailed) {
+    return (
+      <>
+        <Navbar />
+        <main className="app-page">
+          <div className="container" style={{ maxWidth: 640 }}>
+            <div className="glass-card fade-in" style={{ textAlign: "center", padding: "48px 32px" }}>
+              <div style={{ fontSize: "3.5rem", marginBottom: 12 }}>❌</div>
+              <h1 style={{ fontSize: "1.6rem", fontWeight: 800, marginBottom: 12 }}>
+                Payment didn&apos;t go through
+              </h1>
+              <p style={{ color: "var(--text-dim)", marginBottom: 16 }}>
+                {order.errorMsg || "Your payment was not completed. No money has been charged."}
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginBottom: 24 }}>
+                <span className="badge badge-info">
+                  {PROVIDER_EMOJI[order.provider] || "💼"} via {PROVIDER_LABEL[order.provider] || order.provider}
+                </span>
+                <span className="badge badge-info">
+                  {order.planName} · {order.cycle}
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+                <Link
+                  href={`/upgrade?plan=${encodeURIComponent(order.plan)}&provider=${encodeURIComponent(order.provider)}`}
+                  className="btn btn-primary"
+                >
+                  🔁 Try Again
+                </Link>
+                <Link href="/contact" className="btn btn-outline">💬 Contact Support</Link>
+              </div>
+            </div>
+          </div>
+        </main>
+      </>
+    );
+  }
+
+  // 5) Pending state (PhonePe race condition or webhook still processing)
+  const isPending = order.status !== "paid" || flagPending;
+
+  // 6) Success / Pending success page
   const isPaid = order.status === "paid";
   const amountInr = (order.amount / 100).toLocaleString("en-IN");
   const validDate = order.validUntil
@@ -171,6 +248,18 @@ function SuccessContent() {
     hour: "2-digit",
     minute: "2-digit",
   });
+
+  const providerName = PROVIDER_LABEL[order.provider] || order.provider;
+  const providerEmoji = PROVIDER_EMOJI[order.provider] || "💼";
+
+  // Build the right list of receipt rows for the order's provider
+  const orderIdLabel =
+    order.provider === "phonepe" ? "PhonePe Order ID" : "Razorpay Order ID";
+  const orderIdValue = order.externalOrderId || order.id;
+
+  const paymentIdLabel =
+    order.provider === "phonepe" ? "PhonePe Transaction ID" : "Razorpay Payment ID";
+  const paymentIdValue = order.paymentId;
 
   return (
     <>
@@ -192,14 +281,29 @@ function SuccessContent() {
             <p style={{ color: "var(--text-dim)", fontSize: "1rem", marginBottom: 0 }}>
               {isPaid
                 ? `Your ${order.cycle} subscription is now active.`
-                : "We've received your payment and are activating your subscription."}
+                : "We've received your payment and are activating your subscription. This page will refresh once it's confirmed."}
             </p>
 
-            {isPaid && (
-              <div style={{ marginTop: 20, display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
-                <span className="badge badge-success">✅ Payment Captured</span>
+            <div style={{ marginTop: 20, display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+              <span className={`badge ${isPaid ? "badge-success" : "badge-warning"}`}>
+                {isPaid ? "✅ Payment Captured" : "⏳ Awaiting confirmation"}
+              </span>
+              <span className="badge badge-info">
+                {providerEmoji} via {providerName}
+              </span>
+              {isPaid && (
                 <span className="badge badge-success">✅ Subscription Active</span>
-                {order.userEmail && <span className="badge badge-info">📧 Receipt sent to {order.userEmail}</span>}
+              )}
+              {isPaid && order.userEmail && (
+                <span className="badge badge-info">📧 Receipt to {order.userEmail}</span>
+              )}
+            </div>
+
+            {isPending && (
+              <div style={{ marginTop: 20 }}>
+                <button className="btn btn-outline btn-sm" onClick={() => window.location.reload()}>
+                  🔄 Refresh status
+                </button>
               </div>
             )}
           </div>
@@ -210,9 +314,22 @@ function SuccessContent() {
             <div className="receipt-grid">
               <ReceiptRow label="Plan" value={`${order.planName} (${order.cycle})`} />
               <ReceiptRow label="Amount paid" value={`₹${amountInr} (incl. GST)`} bold />
-              <ReceiptRow label="Order ID" value={order.razorpayOrderId} mono />
-              {order.razorpayPaymentId && (
-                <ReceiptRow label="Payment ID" value={order.razorpayPaymentId} mono />
+              <ReceiptRow
+                label="Payment provider"
+                value={`${providerEmoji} ${providerName}`}
+              />
+              {orderIdValue && (
+                <ReceiptRow label={orderIdLabel} value={orderIdValue} mono />
+              )}
+              {paymentIdValue && (
+                <ReceiptRow label={paymentIdLabel} value={paymentIdValue} mono />
+              )}
+              {order.provider === "phonepe" && order.phonepeProviderReferenceId && (
+                <ReceiptRow
+                  label="UPI / Bank reference"
+                  value={order.phonepeProviderReferenceId}
+                  mono
+                />
               )}
               <ReceiptRow label="Purchase date" value={purchaseDate} />
               {validDate && <ReceiptRow label="Valid until" value={validDate} bold />}

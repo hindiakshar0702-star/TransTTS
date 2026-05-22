@@ -41,10 +41,24 @@ model Job {
 
 model Order {
   id                String   @id @default(uuid())
-  razorpayOrderId   String   @unique
+
+  // Which payment provider handled this order: "razorpay" | "phonepe"
+  provider          String   @default("razorpay")
+
+  // -------- Razorpay-specific fields --------
+  razorpayOrderId   String?  @unique
   razorpayPaymentId String?
   razorpaySignature String?
 
+  // -------- PhonePe-specific fields --------
+  // Our own merchant txn id sent in payload (max 38 chars, alphanumeric)
+  phonepeMerchantTransactionId String? @unique
+  // PhonePe's transaction id from status response (after success)
+  phonepeTransactionId         String?
+  // PhonePe's providerReferenceId (e.g. UPI utr / bank reference)
+  phonepeProviderReferenceId   String?
+
+  // -------- Common fields --------
   plan              String   // "starter" | "pro" | "enterprise"
   cycle             String   // "monthly" | "yearly"
   amount            Int      // in paise (₹1 = 100 paise)
@@ -53,11 +67,12 @@ model Order {
 
   userEmail         String?
   userName          String?
+  userPhone         String?  // optional, used by PhonePe prefill
 
   // Subscription validity (set when paid)
   validUntil        DateTime?
 
-  // Razorpay webhook payloads (raw JSON for audit)
+  // Provider webhook payloads (raw JSON for audit)
   webhookEvent      String?
   errorMsg          String?
 
@@ -66,4 +81,5 @@ model Order {
 
   @@index([userEmail])
   @@index([status])
+  @@index([provider])
 }

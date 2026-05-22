@@ -7,6 +7,7 @@ import { useToast } from "@/components/Toast";
 
 type PlanId = "starter" | "pro" | "enterprise";
 type Cycle = "monthly" | "yearly";
+type Provider = "razorpay" | "phonepe";
 
 const PLANS: Record<PlanId, {
   name: string;
@@ -74,6 +75,19 @@ const PLANS: Record<PlanId, {
   },
 };
 
+const PROVIDER_LABEL: Record<Provider, { name: string; emoji: string; tagline: string }> = {
+  razorpay: {
+    name: "Razorpay",
+    emoji: "💳",
+    tagline: "UPI, Cards, Net Banking, Wallets",
+  },
+  phonepe: {
+    name: "PhonePe",
+    emoji: "📱",
+    tagline: "PhonePe app, UPI, Cards & more",
+  },
+};
+
 const RAZORPAY_SCRIPT = "https://checkout.razorpay.com/v1/checkout.js";
 
 /* ------------------------------------------------------------------ */
@@ -136,6 +150,26 @@ function loadRazorpayScript(): Promise<boolean> {
   });
 }
 
+interface ProviderInfo {
+  available: Provider[];
+  default: Provider | null;
+}
+
+async function fetchAvailableProviders(): Promise<ProviderInfo> {
+  try {
+    const res = await fetch("/api/payment-providers", { cache: "no-store" });
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    return {
+      available: (data.available || []) as Provider[],
+      default: (data.default || null) as Provider | null,
+    };
+  } catch {
+    // Fail open — assume Razorpay only so the page still renders
+    return { available: ["razorpay"], default: "razorpay" };
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
@@ -159,20 +193,48 @@ function UpgradeContent() {
     PLANS[initialPlan] ? initialPlan : "pro"
   );
 
-  // Customer details for Razorpay prefill
+  // Provider state
+  const [provider, setProvider] = useState<Provider>("razorpay");
+  const [availableProviders, setAvailableProviders] = useState<Provider[]>([
+    "razorpay",
+  ]);
+
+  // Customer details (shared between providers)
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Sync plan from query param
   useEffect(() => {
     const p = searchParams.get("plan") as PlanId;
     if (p && PLANS[p]) setSelected(p);
   }, [searchParams]);
 
+  // Discover which providers are configured server-side
+  useEffect(() => {
+    fetchAvailableProviders().then((info) => {
+      const list = info.available.length > 0 ? info.available : (["razorpay"] as Provider[]);
+      setAvailableProviders(list);
+      // honour ?provider= query if it's available
+      const queryProvider = searchParams.get("provider") as Provider | null;
+      if (queryProvider && list.includes(queryProvider)) {
+        setProvider(queryProvider);
+      } else if (info.default && list.includes(info.default)) {
+        setProvider(info.default);
+      } else {
+        setProvider(list[0]);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Pre-load Razorpay script in background so checkout opens instantly
   useEffect(() => {
-    loadRazorpayScript().catch(() => {});
-  }, []);
+    if (provider === "razorpay") {
+      loadRazorpayScript().catch(() => {});
+    }
+  }, [provider]);
 
   const plan = PLANS[selected];
   const price = cycle === "monthly" ? plan.monthly : plan.yearly;
@@ -186,109 +248,165 @@ function UpgradeContent() {
   const total = price + gst;
 
   /* -------------------------------------------------------------- */
-  /* Pay handler                                                     */
+  /* Validation                                                      */
+  /* -------------------------------------------------------------- */
+
+  const validateInputs = useCallback((): boolean => {
+    if (!name.trim()) {
+      showToast("Please enter your full name", "error");
+      return false;
+    }
+    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showToast("Please enter a valid email address", "error");
+      return false;
+    }
+    // Phone is optional for Razorpay, also optional but recommended for PhonePe
+    if (phone && !/^[6-9]\d{9}$/.test(phone)) {
+      showToast(
+        "Phone must be a 10-digit Indian mobile number (starts with 6-9)",
+        "error"
+      );
+      return false;
+    }
+    return true;
+  }, [name, email, phone, showToast]);
+
+  /* -------------------------------------------------------------- */
+  /* Razorpay flow                                                   */
+  /* -------------------------------------------------------------- */
+
+  const payWithRazorpay = useCallback(async () => {
+    const ok = await loadRazorpayScript();
+    if (!ok || !window.Razorpay) {
+      throw new Error("Could not load Razorpay. Check your internet connection.");
+    }
+
+    const orderRes = await fetch("/api/razorpay/create-order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plan: selected, cycle, name, email }),
+    });
+
+    if (!orderRes.ok) {
+      const data = await orderRes.json().catch(() => ({}));
+      throw new Error(data.error || `Failed to create order (${orderRes.status})`);
+    }
+
+    const { orderId, amount, currency, keyId, planName } = await orderRes.json();
+    if (!orderId || !keyId) {
+      throw new Error("Invalid response from payment server");
+    }
+
+    const rzp = new window.Razorpay({
+      key: keyId,
+      amount,
+      currency,
+      name: "TransTTS AI",
+      description: `${planName} Plan — ${cycle === "yearly" ? "Yearly" : "Monthly"}`,
+      order_id: orderId,
+      prefill: { name, email, contact: phone || undefined },
+      notes: { plan: selected, cycle },
+      theme: { color: "#6366f1" },
+      modal: {
+        ondismiss: () => {
+          setLoading(false);
+          showToast("Payment cancelled", "info");
+        },
+      },
+      handler: async (response) => {
+        try {
+          const verifyRes = await fetch("/api/razorpay/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(response),
+          });
+          const verifyData = await verifyRes.json();
+
+          if (!verifyRes.ok || !verifyData.verified) {
+            showToast(
+              verifyData.error || "Payment verification failed. Contact support.",
+              "error"
+            );
+            setLoading(false);
+            return;
+          }
+
+          const params = new URLSearchParams({
+            orderId: verifyData.orderId,
+            plan: verifyData.plan,
+            cycle: verifyData.cycle,
+            paymentId: response.razorpay_payment_id,
+            provider: "razorpay",
+          });
+          router.push(`/upgrade/success?${params.toString()}`);
+        } catch (err) {
+          showToast(
+            err instanceof Error ? err.message : "Verification request failed",
+            "error"
+          );
+          setLoading(false);
+        }
+      },
+    });
+
+    rzp.on("payment.failed", (resp) => {
+      showToast(
+        resp.error?.description || "Payment failed. Please try again.",
+        "error"
+      );
+      setLoading(false);
+    });
+
+    rzp.open();
+  }, [selected, cycle, name, email, phone, router, showToast]);
+
+  /* -------------------------------------------------------------- */
+  /* PhonePe flow                                                    */
+  /* -------------------------------------------------------------- */
+
+  const payWithPhonePe = useCallback(async () => {
+    const orderRes = await fetch("/api/phonepe/create-order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        plan: selected,
+        cycle,
+        name,
+        email,
+        phone: phone || undefined,
+      }),
+    });
+
+    if (!orderRes.ok) {
+      const data = await orderRes.json().catch(() => ({}));
+      throw new Error(data.error || `Failed to create PhonePe order (${orderRes.status})`);
+    }
+
+    const { redirectUrl } = await orderRes.json();
+    if (!redirectUrl) {
+      throw new Error("PhonePe response missing redirect URL");
+    }
+
+    // Full-page redirect — user goes to PhonePe checkout, comes back via /api/phonepe/callback
+    window.location.href = redirectUrl;
+  }, [selected, cycle, name, email, phone]);
+
+  /* -------------------------------------------------------------- */
+  /* Pay handler (dispatches to selected provider)                   */
   /* -------------------------------------------------------------- */
 
   const handlePay = useCallback(async () => {
     if (loading) return;
-
-    if (!name.trim()) {
-      showToast("Please enter your full name", "error");
-      return;
-    }
-    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      showToast("Please enter a valid email address", "error");
-      return;
-    }
+    if (!validateInputs()) return;
 
     setLoading(true);
     try {
-      // 1. Ensure Razorpay SDK is available
-      const ok = await loadRazorpayScript();
-      if (!ok || !window.Razorpay) {
-        throw new Error("Could not load Razorpay. Check your internet connection.");
+      if (provider === "phonepe") {
+        await payWithPhonePe();
+        // user is being redirected — keep loading=true until navigation
+      } else {
+        await payWithRazorpay();
       }
-
-      // 2. Create order on the server
-      const orderRes = await fetch("/api/razorpay/create-order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan: selected, cycle, name, email }),
-      });
-
-      if (!orderRes.ok) {
-        const data = await orderRes.json().catch(() => ({}));
-        throw new Error(data.error || `Failed to create order (${orderRes.status})`);
-      }
-
-      const { orderId, amount, currency, keyId, planName } = await orderRes.json();
-      if (!orderId || !keyId) {
-        throw new Error("Invalid response from payment server");
-      }
-
-      // 3. Open Razorpay checkout
-      const rzp = new window.Razorpay({
-        key: keyId,
-        amount,
-        currency,
-        name: "TransTTS AI",
-        description: `${planName} Plan — ${cycle === "yearly" ? "Yearly" : "Monthly"}`,
-        order_id: orderId,
-        prefill: { name, email },
-        notes: { plan: selected, cycle },
-        theme: { color: "#6366f1" },
-        modal: {
-          ondismiss: () => {
-            setLoading(false);
-            showToast("Payment cancelled", "info");
-          },
-        },
-        handler: async (response) => {
-          // 4. Verify on server
-          try {
-            const verifyRes = await fetch("/api/razorpay/verify", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(response),
-            });
-            const verifyData = await verifyRes.json();
-
-            if (!verifyRes.ok || !verifyData.verified) {
-              showToast(
-                verifyData.error || "Payment verification failed. Contact support.",
-                "error"
-              );
-              setLoading(false);
-              return;
-            }
-
-            // 5. Redirect to success page
-            const params = new URLSearchParams({
-              orderId: verifyData.orderId,
-              plan: verifyData.plan,
-              cycle: verifyData.cycle,
-              paymentId: response.razorpay_payment_id,
-            });
-            router.push(`/upgrade/success?${params.toString()}`);
-          } catch (err) {
-            showToast(
-              err instanceof Error ? err.message : "Verification request failed",
-              "error"
-            );
-            setLoading(false);
-          }
-        },
-      });
-
-      rzp.on("payment.failed", (resp) => {
-        showToast(
-          resp.error?.description || "Payment failed. Please try again.",
-          "error"
-        );
-        setLoading(false);
-      });
-
-      rzp.open();
     } catch (err) {
       showToast(
         err instanceof Error ? err.message : "Something went wrong",
@@ -296,7 +414,14 @@ function UpgradeContent() {
       );
       setLoading(false);
     }
-  }, [loading, name, email, selected, cycle, router, showToast]);
+  }, [loading, provider, validateInputs, payWithPhonePe, payWithRazorpay, showToast]);
+
+  const showProviderToggle = availableProviders.length > 1;
+  const providerLabel = PROVIDER_LABEL[provider];
+  const buttonLabel =
+    provider === "phonepe"
+      ? `📱 Pay ₹${total.toLocaleString()} with PhonePe`
+      : `🔒 Pay ₹${total.toLocaleString()} with Razorpay`;
 
   return (
     <>
@@ -394,6 +519,27 @@ function UpgradeContent() {
                     autoComplete="email"
                   />
                 </div>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <label className="form-label">
+                    Mobile (10 digits)
+                    {provider === "phonepe" && (
+                      <span style={{ color: "var(--text-dim)", fontWeight: 400 }}>
+                        {" "}— recommended for PhonePe app
+                      </span>
+                    )}
+                  </label>
+                  <input
+                    type="tel"
+                    className="select-input"
+                    placeholder="9876543210"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                    disabled={loading}
+                    autoComplete="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                  />
+                </div>
               </div>
               <p className="form-hint" style={{ marginTop: 8 }}>
                 Receipt &amp; account access will be sent to this email
@@ -401,7 +547,35 @@ function UpgradeContent() {
             </div>
           )}
 
-          {/* Order Summary + Razorpay CTA */}
+          {/* Provider toggle (only when 2+ providers configured) */}
+          {selected !== "enterprise" && showProviderToggle && (
+            <div className="glass-card fade-in" style={{ marginBottom: 24 }}>
+              <label className="form-label" style={{ marginBottom: 12 }}>
+                💼 Choose Payment Provider
+              </label>
+              <div className="billing-toggle full-width">
+                {(["razorpay", "phonepe"] as Provider[]).map((p) => {
+                  const meta = PROVIDER_LABEL[p];
+                  const isAvailable = availableProviders.includes(p);
+                  return (
+                    <button
+                      key={p}
+                      className={`billing-option ${provider === p ? "active" : ""}`}
+                      onClick={() => setProvider(p)}
+                      disabled={loading || !isAvailable}
+                      type="button"
+                    >
+                      <span style={{ fontSize: "1.1rem" }}>{meta.emoji}</span>
+                      <span>{meta.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="provider-tagline">{providerLabel.tagline}</div>
+            </div>
+          )}
+
+          {/* Order Summary + Pay CTA */}
           <div className="glass-card fade-in">
             <h3 style={{ marginBottom: 20 }}>📋 Order Summary</h3>
 
@@ -439,7 +613,7 @@ function UpgradeContent() {
             {/* Payment methods preview */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: "0.82rem", color: "var(--text-dim)", marginBottom: 8 }}>
-                Pay via:
+                Pay via {providerLabel.name}:
               </div>
               <div className="payment-methods" style={{ justifyContent: "flex-start", marginTop: 0 }}>
                 <span className="payment-method">📱 UPI</span>
@@ -467,13 +641,13 @@ function UpgradeContent() {
                 {loading ? (
                   <><span className="spinner"></span> Processing...</>
                 ) : (
-                  <>🔒 Pay ₹{total.toLocaleString()} with Razorpay</>
+                  buttonLabel
                 )}
               </button>
             )}
 
             <p style={{ textAlign: "center", fontSize: "0.8rem", color: "var(--text-muted)", marginTop: 12 }}>
-              🛡️ 7-day money-back guarantee • 🔒 Secured by Razorpay • Cancel anytime
+              🛡️ 7-day money-back guarantee • 🔒 Secured by {providerLabel.name} • Cancel anytime
             </p>
           </div>
 
