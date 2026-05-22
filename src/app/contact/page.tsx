@@ -12,21 +12,69 @@ export default function ContactPage() {
     teamSize: "",
     message: "",
   });
+  // Honeypot — invisible to humans, irresistible to scraping bots.
+  const [website, setWebsite] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const { showToast } = useToast();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.email || !formData.message) {
+    if (loading) return;
+    setError("");
+
+    // Client-side validation — server re-validates everything anyway
+    if (!formData.name.trim() || !formData.email.trim() || !formData.message.trim()) {
+      setError("Please fill all required fields.");
       showToast("Please fill all required fields", "error");
       return;
     }
-    setSubmitted(true);
-    showToast("Message sent! We'll get back within 24 hours.", "success");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      setError("Please enter a valid email address.");
+      showToast("Invalid email", "error");
+      return;
+    }
+    if (formData.message.trim().length < 10) {
+      setError("Please write at least 10 characters in your message.");
+      showToast("Message too short", "error");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...formData, website }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        const msg = data?.error || `Failed to send message (${res.status})`;
+        setError(msg);
+        showToast(msg, "error");
+        setLoading(false);
+        return;
+      }
+
+      setSubmitted(true);
+      showToast("Message sent! We'll get back within 24 hours.", "success");
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "Could not reach the server. Please try again.";
+      setError(msg);
+      showToast("Network error — please retry", "error");
+      setLoading(false);
+    }
   };
 
   const handleChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+    if (error) setError("");
   };
 
   return (
@@ -80,36 +128,59 @@ export default function ContactPage() {
               </div>
 
               {/* Contact Form */}
-              <form className="glass-card fade-in" onSubmit={handleSubmit}>
+              <form className="glass-card fade-in" onSubmit={handleSubmit} noValidate>
                 <h3 style={{ marginBottom: 20 }}>📬 Send Us a Message</h3>
 
                 <div className="form-grid">
                   <div>
                     <label className="form-label">Full Name *</label>
                     <input
-                      type="text" className="select-input" placeholder="Your full name"
-                      value={formData.name} onChange={(e) => handleChange("name", e.target.value)}
+                      type="text"
+                      className="select-input"
+                      placeholder="Your full name"
+                      value={formData.name}
+                      onChange={(e) => handleChange("name", e.target.value)}
+                      disabled={loading}
+                      autoComplete="name"
+                      maxLength={120}
                       required
                     />
                   </div>
                   <div>
                     <label className="form-label">Work Email *</label>
                     <input
-                      type="email" className="select-input" placeholder="you@company.com"
-                      value={formData.email} onChange={(e) => handleChange("email", e.target.value)}
+                      type="email"
+                      className="select-input"
+                      placeholder="you@company.com"
+                      value={formData.email}
+                      onChange={(e) => handleChange("email", e.target.value)}
+                      disabled={loading}
+                      autoComplete="email"
+                      maxLength={200}
                       required
                     />
                   </div>
                   <div>
                     <label className="form-label">Company</label>
                     <input
-                      type="text" className="select-input" placeholder="Your company name"
-                      value={formData.company} onChange={(e) => handleChange("company", e.target.value)}
+                      type="text"
+                      className="select-input"
+                      placeholder="Your company name"
+                      value={formData.company}
+                      onChange={(e) => handleChange("company", e.target.value)}
+                      disabled={loading}
+                      autoComplete="organization"
+                      maxLength={200}
                     />
                   </div>
                   <div>
                     <label className="form-label">Team Size</label>
-                    <select className="select-input" value={formData.teamSize} onChange={(e) => handleChange("teamSize", e.target.value)}>
+                    <select
+                      className="select-input"
+                      value={formData.teamSize}
+                      onChange={(e) => handleChange("teamSize", e.target.value)}
+                      disabled={loading}
+                    >
                       <option value="">Select team size</option>
                       <option value="1-5">1-5 members</option>
                       <option value="6-20">6-20 members</option>
@@ -121,16 +192,68 @@ export default function ContactPage() {
                   <div style={{ gridColumn: "1 / -1" }}>
                     <label className="form-label">How can we help? *</label>
                     <textarea
-                      className="textarea-input" style={{ minHeight: 140 }}
+                      className="textarea-input"
+                      style={{ minHeight: 140 }}
                       placeholder="Tell us about your use case, expected volume, and any special requirements..."
-                      value={formData.message} onChange={(e) => handleChange("message", e.target.value)}
+                      value={formData.message}
+                      onChange={(e) => handleChange("message", e.target.value)}
+                      disabled={loading}
+                      maxLength={4000}
                       required
                     />
+                    <div className="char-count">{formData.message.length} / 4,000 characters</div>
                   </div>
                 </div>
 
-                <button type="submit" className="btn btn-primary btn-large" style={{ width: "100%", marginTop: 24 }}>
-                  📨 Send Message
+                {/*
+                  Honeypot field — hidden from humans (off-screen + aria-hidden + tabIndex=-1)
+                  but real DOM input that bots will eagerly fill in. Server drops any
+                  submission where this is non-empty.
+                */}
+                <div
+                  aria-hidden="true"
+                  style={{
+                    position: "absolute",
+                    left: "-9999px",
+                    top: "-9999px",
+                    width: 1,
+                    height: 1,
+                    overflow: "hidden",
+                  }}
+                >
+                  <label>
+                    Website (leave blank)
+                    <input
+                      type="text"
+                      tabIndex={-1}
+                      autoComplete="off"
+                      value={website}
+                      onChange={(e) => setWebsite(e.target.value)}
+                      name="website"
+                    />
+                  </label>
+                </div>
+
+                {error && (
+                  <div
+                    className="badge badge-error"
+                    style={{ padding: "12px 18px", fontSize: "0.9rem", marginTop: 16, width: "100%", justifyContent: "flex-start" }}
+                  >
+                    ❌ {error}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  className="btn btn-primary btn-large"
+                  style={{ width: "100%", marginTop: 24 }}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <><span className="spinner"></span> Sending...</>
+                  ) : (
+                    "📨 Send Message"
+                  )}
                 </button>
 
                 <p style={{ textAlign: "center", fontSize: "0.82rem", color: "var(--text-muted)", marginTop: 12 }}>
