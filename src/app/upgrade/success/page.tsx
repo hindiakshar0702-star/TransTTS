@@ -3,6 +3,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import { formatCycle } from "@/lib/pricing";
 
 interface OrderView {
   id: string;
@@ -167,7 +168,7 @@ function SuccessContent() {
               {(fallbackPlan || fallbackCycle) && (
                 <p style={{ color: "var(--text-dim)", marginBottom: 20 }}>
                   {fallbackPlan && <>Plan: <strong>{fallbackPlan}</strong> </>}
-                  {fallbackCycle && <>({fallbackCycle})</>}
+                  {fallbackCycle && <>({formatCycle(fallbackCycle)})</>}
                 </p>
               )}
               <p style={{ color: "var(--text-dim)", marginBottom: 24, fontSize: "0.85rem" }}>
@@ -209,7 +210,7 @@ function SuccessContent() {
                   {PROVIDER_EMOJI[order.provider] || "💼"} via {PROVIDER_LABEL[order.provider] || order.provider}
                 </span>
                 <span className="badge badge-info">
-                  {order.planName} · {order.cycle}
+                  {order.planName} · {formatCycle(order.cycle)}
                 </span>
               </div>
               <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
@@ -280,7 +281,7 @@ function SuccessContent() {
             </h1>
             <p style={{ color: "var(--text-dim)", fontSize: "1rem", marginBottom: 0 }}>
               {isPaid
-                ? `Your ${order.cycle} subscription is now active.`
+                ? `Your ${formatCycle(order.cycle).toLowerCase()} subscription is now active.`
                 : "We've received your payment and are activating your subscription. This page will refresh once it's confirmed."}
             </p>
 
@@ -312,7 +313,7 @@ function SuccessContent() {
           <div className="glass-card fade-in" style={{ marginBottom: 24 }}>
             <h3 style={{ marginBottom: 20 }}>🧾 Receipt</h3>
             <div className="receipt-grid">
-              <ReceiptRow label="Plan" value={`${order.planName} (${order.cycle})`} />
+              <ReceiptRow label="Plan" value={`${order.planName} (${formatCycle(order.cycle)})`} />
               <ReceiptRow label="Amount paid" value={`₹${amountInr} (incl. GST)`} bold />
               <ReceiptRow
                 label="Payment provider"
