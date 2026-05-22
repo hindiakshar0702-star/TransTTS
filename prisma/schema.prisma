@@ -83,3 +83,38 @@ model Order {
   @@index([status])
   @@index([provider])
 }
+
+model ContactInquiry {
+  id        String   @id @default(uuid())
+
+  // Submitted fields
+  name      String
+  email     String
+  company   String?
+  teamSize  String?
+  message   String
+
+  // Lifecycle
+  status    String   @default("new") // "new" | "replied" | "archived" | "spam"
+  source    String?  // "contact_page" | future sources (chat, demo, etc.)
+
+  // Request metadata (forensics + abuse handling)
+  ipAddress String?
+  userAgent String?
+  referrer  String?
+
+  // Email delivery tracking — never block save on email failure
+  notificationEmailSent Boolean @default(false)
+  autoReplyEmailSent    Boolean @default(false)
+  emailError            String?
+
+  // Operator notes (filled in DB / admin tool, not by user)
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([status])
+  @@index([createdAt])
+}
