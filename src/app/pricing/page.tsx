@@ -2,15 +2,27 @@
 import { Fragment, useState } from "react";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
+import {
+  PLAN_PRICES,
+  type PlanId,
+  type CycleKey,
+  formatCycle,
+  cycleMonths,
+  cycleSavingsPercent,
+  monthlyEquivalent,
+  getBasePrice,
+} from "@/lib/pricing";
 
-type Cycle = "monthly" | "yearly";
+/* -------------------------------------------------------------------- */
+/* Plan metadata (presentation-only — prices come from PLAN_PRICES)     */
+/* -------------------------------------------------------------------- */
 
-interface Plan {
-  id: string;
+interface PlanMeta {
+  id: "free" | PlanId;
   name: string;
   tagline: string;
-  monthly: number;
-  yearly: number; // total per year
+  /** Optional view-range hint targeted at YouTubers/podcasters. */
+  audienceHint?: string;
   highlight?: boolean;
   badge?: string;
   cta: string;
@@ -18,13 +30,12 @@ interface Plan {
   features: string[];
 }
 
-const PLANS: Plan[] = [
+const PLANS: PlanMeta[] = [
   {
     id: "free",
     name: "Free",
     tagline: "Try out everything risk-free",
-    monthly: 0,
-    yearly: 0,
+    audienceHint: "Perfect for casual use & testing",
     badge: "Forever Free",
     cta: "Get Started Free",
     ctaLink: "/transcribe",
@@ -43,8 +54,7 @@ const PLANS: Plan[] = [
     id: "starter",
     name: "Starter",
     tagline: "For students & solo creators",
-    monthly: 299,
-    yearly: 2499,
+    audienceHint: "🎓 Channels with under 10K monthly views",
     cta: "Start Starter",
     ctaLink: "/upgrade?plan=starter",
     features: [
@@ -63,8 +73,7 @@ const PLANS: Plan[] = [
     id: "pro",
     name: "Pro",
     tagline: "For content creators & podcasters",
-    monthly: 999,
-    yearly: 8499,
+    audienceHint: "🎬 YouTube channels with 10K – 1M monthly views",
     highlight: true,
     badge: "Most Popular",
     cta: "Upgrade to Pro",
@@ -86,8 +95,7 @@ const PLANS: Plan[] = [
     id: "enterprise",
     name: "Enterprise",
     tagline: "For teams & businesses at scale",
-    monthly: 2999,
-    yearly: 25999,
+    audienceHint: "🏢 Studios, networks, 1M+ subscribers",
     badge: "Best Value",
     cta: "Contact Sales",
     ctaLink: "/contact",
@@ -107,6 +115,10 @@ const PLANS: Plan[] = [
     ],
   },
 ];
+
+/* -------------------------------------------------------------------- */
+/* Comparison table                                                      */
+/* -------------------------------------------------------------------- */
 
 interface ComparisonRow {
   label: string;
@@ -192,19 +204,19 @@ const USE_CASES = [
     icon: "🎙️",
     title: "Podcasters",
     desc: "Auto-transcribe episodes, clone your voice for ads, clean audio",
-    tag: "Pro",
+    tag: "Pro · 10K-1M views",
   },
   {
     icon: "📺",
     title: "YouTubers",
     desc: "Subtitles in 99 languages, dub videos with cloned voice, denoise",
-    tag: "Pro",
+    tag: "Pro · 10K-1M views",
   },
   {
     icon: "🏢",
     title: "Businesses",
     desc: "Meeting transcripts, multilingual customer support, branded voice AI",
-    tag: "Enterprise",
+    tag: "Enterprise · 1M+",
   },
 ];
 
@@ -215,15 +227,19 @@ const FAQS = [
   },
   {
     q: "What payment methods do you accept?",
-    a: "We use Razorpay so you can pay via UPI, debit/credit card (Visa, Mastercard, RuPay, Amex), net banking, or wallets (Paytm, PhonePe, Google Pay). For Enterprise we also accept bank transfer and invoicing.",
+    a: "We use Razorpay and PhonePe so you can pay via UPI, debit/credit card (Visa, Mastercard, RuPay, Amex), net banking, or wallets (Paytm, PhonePe, Google Pay). For Enterprise we also accept bank transfer and invoicing.",
   },
   {
     q: "Are taxes included in the price?",
     a: "Prices shown are exclusive of GST. 18% GST will be added at checkout for Indian customers. Businesses can claim ITC with their GSTIN.",
   },
   {
+    q: "How does multi-year billing work?",
+    a: "Pick 1, 2 or 3 year billing at checkout for bigger savings (up to 42%). You pay upfront once for the full term and your subscription stays active for that whole period at today's price — even if we raise prices later. Cancel inside 7 days for a full refund; afterwards refunds are pro-rated for unused time.",
+  },
+  {
     q: "Can I switch plans anytime?",
-    a: "Yes — upgrade anytime and the new limits apply immediately (we prorate the difference). Downgrades take effect at the end of your current billing cycle. No lock-ins.",
+    a: "Yes — upgrade anytime and the new limits apply immediately (we prorate the difference). Downgrades take effect at the end of your current billing cycle. No lock-ins beyond the term you selected.",
   },
   {
     q: "How does voice cloning work?",
@@ -235,15 +251,11 @@ const FAQS = [
   },
   {
     q: "Do you offer refunds?",
-    a: "Yes — 7-day money-back guarantee on all paid plans, no questions asked. After 7 days, refunds are pro-rated for unused time on annual plans.",
+    a: "Yes — 7-day money-back guarantee on all paid plans, no questions asked. After 7 days, refunds are pro-rated for unused time on annual / multi-year plans.",
   },
   {
     q: "Is my audio data private?",
     a: "Absolutely. Files are processed and deleted within 24 hours. We never train models on your data. Enterprise plans get optional on-premise deployment for full data sovereignty.",
-  },
-  {
-    q: "Can I cancel anytime?",
-    a: "Yes — cancel from your dashboard with one click. No phone calls, no retention pitches. Your data stays accessible for 30 days after cancellation.",
   },
   {
     q: "Do you offer student / NGO discounts?",
@@ -257,21 +269,30 @@ function renderValue(v: string | boolean) {
   return <span style={{ fontSize: "0.85rem" }}>{v}</span>;
 }
 
+/* -------------------------------------------------------------------- */
+/* Cycle toggle                                                          */
+/* -------------------------------------------------------------------- */
+
+const CYCLE_OPTIONS: { key: CycleKey; label: string; sub?: string; star?: boolean }[] = [
+  { key: "monthly", label: "Monthly" },
+  { key: "y1", label: "1 Year" },
+  { key: "y2", label: "2 Years" },
+  { key: "y3", label: "3 Years", star: true },
+];
+
+/* -------------------------------------------------------------------- */
+/* Page                                                                  */
+/* -------------------------------------------------------------------- */
+
 export default function PricingPage() {
-  const [cycle, setCycle] = useState<Cycle>("monthly");
+  const [cycle, setCycle] = useState<CycleKey>("monthly");
 
-  const formatPrice = (plan: Plan) => {
-    if (plan.monthly === 0) return "₹0";
-    if (cycle === "monthly") return `₹${plan.monthly.toLocaleString()}`;
-    return `₹${Math.round(plan.yearly / 12).toLocaleString()}`;
-  };
-
-  const formatPeriod = () => (cycle === "monthly" ? "/ month" : "/ month, billed yearly");
-
-  const yearlySaving = (plan: Plan) => {
-    if (plan.monthly === 0) return 0;
-    const saved = plan.monthly * 12 - plan.yearly;
-    return Math.round((saved / (plan.monthly * 12)) * 100);
+  // Best savings % across paid plans for the toggle hint label
+  const bestSavingForCycle = (c: CycleKey): number => {
+    if (c === "monthly") return 0;
+    return Math.max(
+      ...(Object.keys(PLAN_PRICES) as PlanId[]).map((p) => cycleSavingsPercent(p, c))
+    );
   };
 
   return (
@@ -286,27 +307,45 @@ export default function PricingPage() {
             Simple, <span className="gradient-text">Transparent</span> Pricing
           </h1>
           <p className="section-subtitle" style={{ maxWidth: 640 }}>
-            Start free. Upgrade when you grow. Cancel anytime.
-            All plans include Hindi-first AI built for Indian creators.
+            Start free. Upgrade when you grow. Lock in today&apos;s price for up to 3 years.
+            Built for Indian creators — Hindi-first AI.
           </p>
 
-          {/* Billing toggle */}
+          {/* Cycle toggle */}
           <div className="pricing-controls">
-            <div className="billing-toggle">
-              <button
-                className={`billing-option ${cycle === "monthly" ? "active" : ""}`}
-                onClick={() => setCycle("monthly")}
-              >
-                Monthly
-              </button>
-              <button
-                className={`billing-option ${cycle === "yearly" ? "active" : ""}`}
-                onClick={() => setCycle("yearly")}
-              >
-                Yearly <span className="save-badge">Save up to 30%</span>
-              </button>
+            <div className="billing-toggle multi">
+              {CYCLE_OPTIONS.map((opt) => {
+                const isActive = cycle === opt.key;
+                const saving = bestSavingForCycle(opt.key);
+                return (
+                  <button
+                    key={opt.key}
+                    className={`billing-option ${isActive ? "active" : ""}`}
+                    onClick={() => setCycle(opt.key)}
+                    type="button"
+                  >
+                    {opt.star && !isActive && <span style={{ marginRight: 4 }}>⭐</span>}
+                    {opt.label}
+                    {saving > 0 && (
+                      <span className="save-badge">Save {saving}%</span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
+          {cycle === "y3" && (
+            <p
+              style={{
+                fontSize: "0.85rem",
+                color: "var(--text-dim)",
+                marginTop: -28,
+                marginBottom: 24,
+              }}
+            >
+              🔒 3-year plans lock in today&apos;s price — even if rates go up later
+            </p>
+          )}
         </div>
       </section>
 
@@ -315,63 +354,14 @@ export default function PricingPage() {
         <div className="container">
           <div className="pricing-grid">
             {PLANS.map((plan) => (
-              <div
-                key={plan.id}
-                className={`pricing-card ${plan.highlight ? "pricing-highlight" : ""}`}
-              >
-                <div className="pricing-badge-row">
-                  {plan.badge && (
-                    <span
-                      className={
-                        plan.highlight
-                          ? "tier-badge-popular"
-                          : `badge ${plan.id === "enterprise" ? "badge-success" : "badge-info"}`
-                      }
-                    >
-                      {plan.highlight ? "⭐ " : ""}{plan.badge}
-                    </span>
-                  )}
-                </div>
-
-                <h3 className="pricing-plan-name">{plan.name}</h3>
-                <p className="pricing-desc">{plan.tagline}</p>
-
-                <div className="pricing-price">
-                  <span className="pricing-amount">{formatPrice(plan)}</span>
-                  {plan.monthly > 0 && (
-                    <span className="pricing-period">{formatPeriod()}</span>
-                  )}
-                  {cycle === "yearly" && plan.monthly > 0 && (
-                    <div style={{ marginTop: 6 }}>
-                      <span className="save-badge">Save {yearlySaving(plan)}%</span>
-                    </div>
-                  )}
-                  {plan.monthly === 0 && <span className="pricing-period">forever</span>}
-                </div>
-
-                <ul className="pricing-features">
-                  {plan.features.map((f) => (
-                    <li key={f} className="included">
-                      <span>✅</span> {f}
-                    </li>
-                  ))}
-                </ul>
-
-                <Link
-                  href={plan.ctaLink}
-                  className={`btn ${plan.highlight ? "btn-primary" : "btn-outline"} btn-large`}
-                  style={{ width: "100%", textAlign: "center" }}
-                >
-                  {plan.cta}
-                </Link>
-              </div>
+              <PricingCard key={plan.id} plan={plan} cycle={cycle} />
             ))}
           </div>
 
           {/* Payment methods */}
           <div className="section-center" style={{ marginTop: 40 }}>
             <p style={{ color: "var(--text-dim)", fontSize: "0.85rem", marginBottom: 8 }}>
-              🔒 Secure checkout via Razorpay • GST invoices • Cancel anytime
+              🔒 Secure checkout via Razorpay or PhonePe • GST invoices • Cancel anytime
             </p>
             <div className="payment-methods">
               <span className="payment-method">📱 UPI</span>
@@ -423,9 +413,11 @@ export default function PricingPage() {
                     <th key={p.id} className={p.highlight ? "highlight" : ""}>
                       <div className="plan-name">{p.name}</div>
                       <div className="plan-sub">
-                        {p.monthly === 0
+                        {p.id === "free"
                           ? "Free"
-                          : `₹${(cycle === "monthly" ? p.monthly : Math.round(p.yearly / 12)).toLocaleString()}/mo`}
+                          : p.id === "enterprise"
+                          ? "Custom"
+                          : `₹${monthlyEquivalent(p.id, cycle).toLocaleString()}/mo`}
                       </div>
                     </th>
                   ))}
@@ -530,5 +522,152 @@ export default function PricingPage() {
         </div>
       </footer>
     </>
+  );
+}
+
+/* -------------------------------------------------------------------- */
+/* Pricing card sub-component                                            */
+/* -------------------------------------------------------------------- */
+
+function PricingCard({ plan, cycle }: { plan: PlanMeta; cycle: CycleKey }) {
+  if (plan.id === "free") {
+    return (
+      <div className="pricing-card">
+        <div className="pricing-badge-row">
+          {plan.badge && (
+            <span className="badge badge-info">{plan.badge}</span>
+          )}
+        </div>
+        <h3 className="pricing-plan-name">{plan.name}</h3>
+        <p className="pricing-desc">{plan.tagline}</p>
+        {plan.audienceHint && (
+          <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: 16 }}>
+            {plan.audienceHint}
+          </p>
+        )}
+        <div className="pricing-price">
+          <span className="pricing-amount">₹0</span>
+          <span className="pricing-period">forever</span>
+        </div>
+        <ul className="pricing-features">
+          {plan.features.map((f) => (
+            <li key={f} className="included">
+              <span>✅</span> {f}
+            </li>
+          ))}
+        </ul>
+        <Link
+          href={plan.ctaLink}
+          className="btn btn-outline btn-large"
+          style={{ width: "100%", textAlign: "center" }}
+        >
+          {plan.cta}
+        </Link>
+      </div>
+    );
+  }
+
+  if (plan.id === "enterprise") {
+    return (
+      <div className="pricing-card">
+        <div className="pricing-badge-row">
+          {plan.badge && (
+            <span className="badge badge-success">{plan.badge}</span>
+          )}
+        </div>
+        <h3 className="pricing-plan-name">{plan.name}</h3>
+        <p className="pricing-desc">{plan.tagline}</p>
+        {plan.audienceHint && (
+          <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: 16 }}>
+            {plan.audienceHint}
+          </p>
+        )}
+        <div className="pricing-price">
+          <span className="pricing-amount" style={{ fontSize: "2.2rem" }}>Custom</span>
+          <span className="pricing-period">/ contact us</span>
+        </div>
+        <ul className="pricing-features">
+          {plan.features.map((f) => (
+            <li key={f} className="included">
+              <span>✅</span> {f}
+            </li>
+          ))}
+        </ul>
+        <Link
+          href={plan.ctaLink}
+          className="btn btn-outline btn-large"
+          style={{ width: "100%", textAlign: "center" }}
+        >
+          {plan.cta}
+        </Link>
+      </div>
+    );
+  }
+
+  // Paid plans (starter, pro)
+  const planId = plan.id as PlanId;
+  const totalPrice = getBasePrice(planId, cycle);
+  const perMonth = monthlyEquivalent(planId, cycle);
+  const months = cycleMonths(cycle);
+  const saving = cycleSavingsPercent(planId, cycle);
+
+  const ctaHref = `${plan.ctaLink}${plan.ctaLink.includes("?") ? "&" : "?"}cycle=${cycle}`;
+
+  return (
+    <div
+      className={`pricing-card ${plan.highlight ? "pricing-highlight" : ""}`}
+    >
+      <div className="pricing-badge-row">
+        {plan.badge && (
+          <span
+            className={
+              plan.highlight ? "tier-badge-popular" : "badge badge-info"
+            }
+          >
+            {plan.highlight ? "⭐ " : ""}
+            {plan.badge}
+          </span>
+        )}
+      </div>
+
+      <h3 className="pricing-plan-name">{plan.name}</h3>
+      <p className="pricing-desc">{plan.tagline}</p>
+      {plan.audienceHint && (
+        <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: 16 }}>
+          {plan.audienceHint}
+        </p>
+      )}
+
+      <div className="pricing-price">
+        <span className="pricing-amount">₹{perMonth.toLocaleString()}</span>
+        <span className="pricing-period">/ month</span>
+        {months > 1 && (
+          <div style={{ fontSize: "0.78rem", color: "var(--text-dim)", marginTop: 6 }}>
+            Billed ₹{totalPrice.toLocaleString()} for {formatCycle(cycle).toLowerCase()}
+          </div>
+        )}
+        {saving > 0 && (
+          <div style={{ marginTop: 6 }}>
+            <span className="save-badge">Save {saving}%</span>
+          </div>
+        )}
+      </div>
+
+      <ul className="pricing-features">
+        {plan.features.map((f) => (
+          <li key={f} className="included">
+            <span>✅</span> {f}
+          </li>
+        ))}
+      </ul>
+
+      <Link
+        href={ctaHref}
+        className={`btn ${plan.highlight ? "btn-primary" : "btn-outline"} btn-large`}
+        style={{ width: "100%", textAlign: "center" }}
+      >
+        {plan.cta}
+      </Link>
+    </div>
   );
 }

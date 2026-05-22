@@ -4,25 +4,35 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
 import { useToast } from "@/components/Toast";
+import {
+  type PlanId,
+  type CycleKey,
+  type Cycle,
+  isValidCycle,
+  normalizeCycle,
+  getBasePrice,
+  monthlyEquivalent,
+  cycleMonths,
+  cycleSavingsPercent,
+  formatCycle,
+  GST_RATE,
+} from "@/lib/pricing";
 
-type PlanId = "starter" | "pro" | "enterprise";
-type Cycle = "monthly" | "yearly";
+type UiPlanId = PlanId; // "starter" | "pro" | "enterprise"
 type Provider = "razorpay" | "phonepe";
 
-const PLANS: Record<PlanId, {
+const PLANS: Record<UiPlanId, {
   name: string;
-  monthly: number;
-  yearly: number;
   desc: string;
+  audienceHint?: string;
   features: string[];
   emoji: string;
 }> = {
   starter: {
     name: "Starter",
-    monthly: 299,
-    yearly: 2499,
     emoji: "🌱",
     desc: "For students & solo creators",
+    audienceHint: "🎓 Channels with under 10K monthly views",
     features: [
       "5 hours transcription / month",
       "100,000 chars translation",
@@ -37,10 +47,9 @@ const PLANS: Record<PlanId, {
   },
   pro: {
     name: "Pro",
-    monthly: 999,
-    yearly: 8499,
     emoji: "⚡",
     desc: "For content creators & podcasters",
+    audienceHint: "🎬 YouTube channels with 10K – 1M monthly views",
     features: [
       "25 hours transcription / month",
       "500,000 chars translation",
@@ -56,10 +65,9 @@ const PLANS: Record<PlanId, {
   },
   enterprise: {
     name: "Enterprise",
-    monthly: 2999,
-    yearly: 25999,
     emoji: "🏢",
     desc: "For teams & businesses at scale",
+    audienceHint: "🏢 Studios, networks, 1M+ subscribers",
     features: [
       "Unlimited transcription, translation & TTS",
       "Unlimited Voice Clones",
@@ -76,19 +84,18 @@ const PLANS: Record<PlanId, {
 };
 
 const PROVIDER_LABEL: Record<Provider, { name: string; emoji: string; tagline: string }> = {
-  razorpay: {
-    name: "Razorpay",
-    emoji: "💳",
-    tagline: "UPI, Cards, Net Banking, Wallets",
-  },
-  phonepe: {
-    name: "PhonePe",
-    emoji: "📱",
-    tagline: "PhonePe app, UPI, Cards & more",
-  },
+  razorpay: { name: "Razorpay", emoji: "💳", tagline: "UPI, Cards, Net Banking, Wallets" },
+  phonepe: { name: "PhonePe", emoji: "📱", tagline: "PhonePe app, UPI, Cards & more" },
 };
 
 const RAZORPAY_SCRIPT = "https://checkout.razorpay.com/v1/checkout.js";
+
+const CYCLE_OPTIONS: { key: CycleKey; label: string; star?: boolean }[] = [
+  { key: "monthly", label: "Monthly" },
+  { key: "y1", label: "1 Year" },
+  { key: "y2", label: "2 Years" },
+  { key: "y3", label: "3 Years", star: true },
+];
 
 /* ------------------------------------------------------------------ */
 /* Razorpay typings                                                    */
@@ -165,9 +172,14 @@ async function fetchAvailableProviders(): Promise<ProviderInfo> {
       default: (data.default || null) as Provider | null,
     };
   } catch {
-    // Fail open — assume Razorpay only so the page still renders
     return { available: ["razorpay"], default: "razorpay" };
   }
+}
+
+function readCycleParam(raw: string | null): CycleKey {
+  if (!raw) return "monthly";
+  if (!isValidCycle(raw)) return "monthly";
+  return normalizeCycle(raw as Cycle);
 }
 
 /* ------------------------------------------------------------------ */
@@ -187,17 +199,15 @@ function UpgradeContent() {
   const router = useRouter();
   const { showToast } = useToast();
 
-  const initialPlan = (searchParams.get("plan") as PlanId) || "pro";
-  const [cycle, setCycle] = useState<Cycle>("monthly");
-  const [selected, setSelected] = useState<PlanId>(
+  const initialPlan = (searchParams.get("plan") as UiPlanId) || "pro";
+  const [cycle, setCycle] = useState<CycleKey>(() => readCycleParam(searchParams.get("cycle")));
+  const [selected, setSelected] = useState<UiPlanId>(
     PLANS[initialPlan] ? initialPlan : "pro"
   );
 
   // Provider state
   const [provider, setProvider] = useState<Provider>("razorpay");
-  const [availableProviders, setAvailableProviders] = useState<Provider[]>([
-    "razorpay",
-  ]);
+  const [availableProviders, setAvailableProviders] = useState<Provider[]>(["razorpay"]);
 
   // Customer details (shared between providers)
   const [name, setName] = useState("");
@@ -205,10 +215,13 @@ function UpgradeContent() {
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Sync plan from query param
+  // Sync plan + cycle from query param
   useEffect(() => {
-    const p = searchParams.get("plan") as PlanId;
+    const p = searchParams.get("plan") as UiPlanId;
     if (p && PLANS[p]) setSelected(p);
+    const c = readCycleParam(searchParams.get("cycle"));
+    setCycle(c);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   // Discover which providers are configured server-side
@@ -216,7 +229,6 @@ function UpgradeContent() {
     fetchAvailableProviders().then((info) => {
       const list = info.available.length > 0 ? info.available : (["razorpay"] as Provider[]);
       setAvailableProviders(list);
-      // honour ?provider= query if it's available
       const queryProvider = searchParams.get("provider") as Provider | null;
       if (queryProvider && list.includes(queryProvider)) {
         setProvider(queryProvider);
@@ -229,7 +241,7 @@ function UpgradeContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Pre-load Razorpay script in background so checkout opens instantly
+  // Pre-load Razorpay script in background
   useEffect(() => {
     if (provider === "razorpay") {
       loadRazorpayScript().catch(() => {});
@@ -237,15 +249,20 @@ function UpgradeContent() {
   }, [provider]);
 
   const plan = PLANS[selected];
-  const price = cycle === "monthly" ? plan.monthly : plan.yearly;
-  const monthlyEquivalent =
-    cycle === "monthly" ? plan.monthly : Math.round(plan.yearly / 12);
-  const savedPercent =
-    cycle === "yearly"
-      ? Math.round((1 - plan.yearly / (plan.monthly * 12)) * 100)
+  const isEnterprise = selected === "enterprise";
+
+  /* -------- Pricing math (only for non-enterprise paid tiers) -------- */
+  const totalPrice = isEnterprise ? 0 : getBasePrice(selected, cycle);
+  const perMonth = isEnterprise ? 0 : monthlyEquivalent(selected, cycle);
+  const months = cycleMonths(cycle);
+  const savedPercent = isEnterprise ? 0 : cycleSavingsPercent(selected, cycle);
+  const monthlyEquivalentBase = isEnterprise ? 0 : getBasePrice(selected, "monthly");
+  const savedAmount =
+    !isEnterprise && months > 1
+      ? Math.max(0, monthlyEquivalentBase * months - totalPrice)
       : 0;
-  const gst = Math.round(price * 0.18);
-  const total = price + gst;
+  const gst = Math.round(totalPrice * GST_RATE);
+  const total = totalPrice + gst;
 
   /* -------------------------------------------------------------- */
   /* Validation                                                      */
@@ -260,7 +277,6 @@ function UpgradeContent() {
       showToast("Please enter a valid email address", "error");
       return false;
     }
-    // Phone is optional for Razorpay, also optional but recommended for PhonePe
     if (phone && !/^[6-9]\d{9}$/.test(phone)) {
       showToast(
         "Phone must be a 10-digit Indian mobile number (starts with 6-9)",
@@ -302,7 +318,7 @@ function UpgradeContent() {
       amount,
       currency,
       name: "TransTTS AI",
-      description: `${planName} Plan — ${cycle === "yearly" ? "Yearly" : "Monthly"}`,
+      description: `${planName} Plan — ${formatCycle(cycle)}`,
       order_id: orderId,
       prefill: { name, email, contact: phone || undefined },
       notes: { plan: selected, cycle },
@@ -387,7 +403,6 @@ function UpgradeContent() {
       throw new Error("PhonePe response missing redirect URL");
     }
 
-    // Full-page redirect — user goes to PhonePe checkout, comes back via /api/phonepe/callback
     window.location.href = redirectUrl;
   }, [selected, cycle, name, email, phone]);
 
@@ -403,7 +418,6 @@ function UpgradeContent() {
     try {
       if (provider === "phonepe") {
         await payWithPhonePe();
-        // user is being redirected — keep loading=true until navigation
       } else {
         await payWithRazorpay();
       }
@@ -418,10 +432,11 @@ function UpgradeContent() {
 
   const showProviderToggle = availableProviders.length > 1;
   const providerLabel = PROVIDER_LABEL[provider];
-  const buttonLabel =
-    provider === "phonepe"
-      ? `📱 Pay ₹${total.toLocaleString()} with PhonePe`
-      : `🔒 Pay ₹${total.toLocaleString()} with Razorpay`;
+  const buttonLabel = isEnterprise
+    ? "💬 Contact Sales for Custom Pricing"
+    : provider === "phonepe"
+    ? `📱 Pay ₹${total.toLocaleString()} with PhonePe`
+    : `🔒 Pay ₹${total.toLocaleString()} with Razorpay`;
 
   return (
     <>
@@ -436,7 +451,7 @@ function UpgradeContent() {
           {/* Plan tabs */}
           <div className="glass-card fade-in" style={{ marginBottom: 24 }}>
             <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 24, flexWrap: "wrap" }}>
-              {(Object.keys(PLANS) as PlanId[]).map((id) => (
+              {(Object.keys(PLANS) as UiPlanId[]).map((id) => (
                 <button
                   key={id}
                   className={`tab ${selected === id ? "active" : ""}`}
@@ -448,36 +463,64 @@ function UpgradeContent() {
               ))}
             </div>
 
-            {/* Billing cycle toggle */}
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 24 }}>
-              <div className="billing-toggle">
-                <button
-                  className={`billing-option ${cycle === "monthly" ? "active" : ""}`}
-                  onClick={() => setCycle("monthly")}
-                  disabled={loading}
-                >
-                  Monthly
-                </button>
-                <button
-                  className={`billing-option ${cycle === "yearly" ? "active" : ""}`}
-                  onClick={() => setCycle("yearly")}
-                  disabled={loading}
-                >
-                  Yearly
-                  {savedPercent > 0 && <span className="save-badge">Save {savedPercent}%</span>}
-                </button>
+            {/* Cycle toggle (hidden for enterprise — sales call decides terms) */}
+            {!isEnterprise && (
+              <div style={{ display: "flex", justifyContent: "center", marginBottom: 24 }}>
+                <div className="billing-toggle multi">
+                  {CYCLE_OPTIONS.map((opt) => {
+                    const isActive = cycle === opt.key;
+                    const saving = cycleSavingsPercent(selected, opt.key);
+                    return (
+                      <button
+                        key={opt.key}
+                        className={`billing-option ${isActive ? "active" : ""}`}
+                        onClick={() => setCycle(opt.key)}
+                        disabled={loading}
+                        type="button"
+                      >
+                        {opt.star && !isActive && <span style={{ marginRight: 4 }}>⭐</span>}
+                        {opt.label}
+                        {saving > 0 && <span className="save-badge">Save {saving}%</span>}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Price display */}
             <div style={{ textAlign: "center", marginBottom: 24 }}>
-              <div className="pricing-amount" style={{ fontSize: "3.5rem" }}>
-                ₹{monthlyEquivalent.toLocaleString()}
-              </div>
-              <div className="pricing-period">
-                / month {cycle === "yearly" && <span style={{ color: "var(--text-muted)" }}>(billed yearly)</span>}
-              </div>
+              {isEnterprise ? (
+                <>
+                  <div className="pricing-amount" style={{ fontSize: "2.5rem" }}>Custom</div>
+                  <div className="pricing-period">contact sales for pricing</div>
+                </>
+              ) : (
+                <>
+                  <div className="pricing-amount" style={{ fontSize: "3.5rem" }}>
+                    ₹{perMonth.toLocaleString()}
+                  </div>
+                  <div className="pricing-period">
+                    / month{" "}
+                    {months > 1 && (
+                      <span style={{ color: "var(--text-muted)" }}>
+                        (billed ₹{totalPrice.toLocaleString()} for {formatCycle(cycle).toLowerCase()})
+                      </span>
+                    )}
+                  </div>
+                </>
+              )}
               <p className="pricing-desc" style={{ marginTop: 8 }}>{plan.desc}</p>
+              {plan.audienceHint && (
+                <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 4 }}>
+                  {plan.audienceHint}
+                </p>
+              )}
+              {cycle === "y3" && !isEnterprise && (
+                <p style={{ fontSize: "0.82rem", color: "var(--accent)", marginTop: 12 }}>
+                  🔒 Locked at today&apos;s price for 3 years
+                </p>
+              )}
             </div>
 
             {/* Features */}
@@ -491,7 +534,7 @@ function UpgradeContent() {
           </div>
 
           {/* Customer details (for non-enterprise) */}
-          {selected !== "enterprise" && (
+          {!isEnterprise && (
             <div className="glass-card fade-in" style={{ marginBottom: 24 }}>
               <h3 style={{ marginBottom: 20 }}>👤 Your Details</h3>
               <div className="form-grid">
@@ -548,7 +591,7 @@ function UpgradeContent() {
           )}
 
           {/* Provider toggle (only when 2+ providers configured) */}
-          {selected !== "enterprise" && showProviderToggle && (
+          {!isEnterprise && showProviderToggle && (
             <div className="glass-card fade-in" style={{ marginBottom: 24 }}>
               <label className="form-label" style={{ marginBottom: 12 }}>
                 💼 Choose Payment Provider
@@ -579,57 +622,79 @@ function UpgradeContent() {
           <div className="glass-card fade-in">
             <h3 style={{ marginBottom: 20 }}>📋 Order Summary</h3>
 
-            <div style={{
-              padding: "16px 20px", background: "var(--glass)",
-              borderRadius: "var(--radius-sm)", border: "1px solid var(--border)",
-              marginBottom: 20,
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                <span style={{ color: "var(--text-dim)" }}>
-                  {plan.emoji} {plan.name} Plan ({cycle === "monthly" ? "Monthly" : "Yearly"})
-                </span>
-                <span>₹{price.toLocaleString()}</span>
-              </div>
-              {cycle === "yearly" && savedPercent > 0 && (
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, color: "#10b981" }}>
-                  <span>Yearly discount ({savedPercent}%)</span>
-                  <span>Saved ₹{(plan.monthly * 12 - plan.yearly).toLocaleString()}</span>
-                </div>
-              )}
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                <span style={{ color: "var(--text-dim)" }}>GST (18%)</span>
-                <span>₹{gst.toLocaleString()}</span>
-              </div>
+            {!isEnterprise ? (
               <div style={{
-                borderTop: "1px solid var(--border)", paddingTop: 12, marginTop: 4,
-                display: "flex", justifyContent: "space-between", fontWeight: 700,
-                fontSize: "1.05rem",
+                padding: "16px 20px", background: "var(--glass)",
+                borderRadius: "var(--radius-sm)", border: "1px solid var(--border)",
+                marginBottom: 20,
               }}>
-                <span>Total payable</span>
-                <span className="gradient-text">₹{total.toLocaleString()}</span>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                  <span style={{ color: "var(--text-dim)" }}>
+                    {plan.emoji} {plan.name} Plan ({formatCycle(cycle)})
+                  </span>
+                  <span>₹{totalPrice.toLocaleString()}</span>
+                </div>
+                {savedPercent > 0 && savedAmount > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, color: "#10b981" }}>
+                    <span>Multi-year discount ({savedPercent}%)</span>
+                    <span>Saved ₹{savedAmount.toLocaleString()}</span>
+                  </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                  <span style={{ color: "var(--text-dim)" }}>GST (18%)</span>
+                  <span>₹{gst.toLocaleString()}</span>
+                </div>
+                <div style={{
+                  borderTop: "1px solid var(--border)", paddingTop: 12, marginTop: 4,
+                  display: "flex", justifyContent: "space-between", fontWeight: 700,
+                  fontSize: "1.05rem",
+                }}>
+                  <span>Total payable</span>
+                  <span className="gradient-text">₹{total.toLocaleString()}</span>
+                </div>
+                {months > 1 && (
+                  <div style={{ marginTop: 10, fontSize: "0.8rem", color: "var(--text-muted)", textAlign: "center" }}>
+                    Effective ₹{Math.round(total / months).toLocaleString()}/month for the next {formatCycle(cycle).toLowerCase()}
+                  </div>
+                )}
               </div>
-            </div>
+            ) : (
+              <div style={{
+                padding: "20px", background: "var(--glass)",
+                borderRadius: "var(--radius-sm)", border: "1px solid var(--border)",
+                marginBottom: 20, textAlign: "center",
+              }}>
+                <p style={{ color: "var(--text-dim)", marginBottom: 4 }}>
+                  Enterprise plans are tailored to your team&apos;s needs.
+                </p>
+                <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
+                  Custom pricing, SLA, on-premise option, dedicated manager.
+                </p>
+              </div>
+            )}
 
             {/* Payment methods preview */}
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: "0.82rem", color: "var(--text-dim)", marginBottom: 8 }}>
-                Pay via {providerLabel.name}:
+            {!isEnterprise && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: "0.82rem", color: "var(--text-dim)", marginBottom: 8 }}>
+                  Pay via {providerLabel.name}:
+                </div>
+                <div className="payment-methods" style={{ justifyContent: "flex-start", marginTop: 0 }}>
+                  <span className="payment-method">📱 UPI</span>
+                  <span className="payment-method">💳 Cards</span>
+                  <span className="payment-method">🏦 Net Banking</span>
+                  <span className="payment-method">📲 Wallets</span>
+                </div>
               </div>
-              <div className="payment-methods" style={{ justifyContent: "flex-start", marginTop: 0 }}>
-                <span className="payment-method">📱 UPI</span>
-                <span className="payment-method">💳 Cards</span>
-                <span className="payment-method">🏦 Net Banking</span>
-                <span className="payment-method">📲 Wallets</span>
-              </div>
-            </div>
+            )}
 
-            {selected === "enterprise" ? (
+            {isEnterprise ? (
               <Link
                 href="/contact"
                 className="btn btn-primary btn-large"
                 style={{ width: "100%", textAlign: "center" }}
               >
-                💬 Contact Sales for Custom Pricing
+                {buttonLabel}
               </Link>
             ) : (
               <button

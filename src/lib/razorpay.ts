@@ -1,51 +1,30 @@
 import Razorpay from "razorpay";
 
 /**
- * Single source of truth for plan pricing across server + client.
- * Amounts are in INR rupees (NOT paise). GST is added at checkout time.
+ * Razorpay-server-only utilities (Razorpay SDK is Node-only and must
+ * never be imported into a "use client" component).
+ *
+ * Pricing data lives in @/lib/pricing — both client and server should
+ * import shared types/functions from there, while this file owns the
+ * authenticated SDK client.
  */
-export const PLAN_PRICES = {
-  starter: { monthly: 299, yearly: 2499 },
-  pro: { monthly: 999, yearly: 8499 },
-  enterprise: { monthly: 2999, yearly: 25999 },
-} as const;
 
-export const PLAN_NAMES: Record<string, string> = {
-  starter: "Starter",
-  pro: "Pro",
-  enterprise: "Enterprise",
-};
-
-export type PlanId = keyof typeof PLAN_PRICES;
-export type Cycle = "monthly" | "yearly";
-
-export const GST_RATE = 0.18;
-
-/**
- * Returns total amount payable in PAISE (Razorpay always uses paise).
- * Includes 18% GST on top of base price.
- */
-export function getOrderAmountInPaise(plan: PlanId, cycle: Cycle): number {
-  const prices = PLAN_PRICES[plan];
-  if (!prices) return 0;
-  const base = cycle === "yearly" ? prices.yearly : prices.monthly;
-  const withGst = base * (1 + GST_RATE);
-  return Math.round(withGst * 100); // rupees -> paise
-}
-
-/**
- * Compute the validity end-date for a successful payment.
- * monthly: +30 days, yearly: +365 days.
- */
-export function computeValidUntil(cycle: Cycle, from: Date = new Date()): Date {
-  const end = new Date(from);
-  if (cycle === "yearly") {
-    end.setDate(end.getDate() + 365);
-  } else {
-    end.setDate(end.getDate() + 30);
-  }
-  return end;
-}
+export {
+  PLAN_PRICES,
+  PLAN_NAMES,
+  GST_RATE,
+  normalizeCycle,
+  cycleMonths,
+  formatCycle,
+  getBasePrice,
+  getOrderAmountInPaise,
+  computeValidUntil,
+  cycleSavingsPercent,
+  monthlyEquivalent,
+  isValidPlan,
+  isValidCycle,
+} from "./pricing";
+export type { PlanId, Cycle, CycleKey } from "./pricing";
 
 /**
  * Lazy-initialised Razorpay server SDK client.
@@ -62,14 +41,4 @@ export function getRazorpayClient(): Razorpay | null {
     _client = new Razorpay({ key_id: keyId, key_secret: keySecret });
   }
   return _client;
-}
-
-/**
- * Validates that the given (plan, cycle) combination is real.
- */
-export function isValidPlan(plan: string): plan is PlanId {
-  return plan in PLAN_PRICES;
-}
-export function isValidCycle(cycle: string): cycle is Cycle {
-  return cycle === "monthly" || cycle === "yearly";
 }
