@@ -1,23 +1,93 @@
 # Contact Form Setup & Testing
 
-The `/contact` form (Send Us a Message) is live and **persists every
-submission to the database**, even when no email service is configured.
-This guide covers turning on email notifications and verifying the
-end-to-end flow.
+The `/contact` form (Send Us a Message) supports **two delivery modes**.
+Pick whichever fits your stage — both keep the same nice UX (inline
+errors, loading state, success card, honeypot).
 
----
-
-## TL;DR
+```
+                ┌───────────────────────────┐
+                │  /contact  (form)         │
+                └────────────┬──────────────┘
+                             │
+        NEXT_PUBLIC_FORMSUBMIT_EMAIL set?
+                             │
+            ┌────── yes ─────┴───── no ───────┐
+            ▼                                 ▼
+  ┌──────────────────────┐         ┌──────────────────────┐
+  │ formsubmit.co        │         │ POST /api/contact    │
+  │ → straight to inbox  │         │ → ContactInquiry DB  │
+  │ → no DB, no signup   │         │ → Resend email (opt) │
+  └──────────────────────┘         └──────────────────────┘
+```
 
 | Want it to… | Set these env vars |
 |---|---|
-| Save submissions to DB only (no email) | _nothing — works out of the box_ |
-| Email you on every new submission + auto-reply to the user | `RESEND_API_KEY`, `ADMIN_EMAIL`, `FROM_EMAIL` |
+| **Mode 0 — FormSubmit (recommended for testing)**: zero backend, submissions arrive in any inbox | `NEXT_PUBLIC_FORMSUBMIT_EMAIL` |
+| Save submissions to DB only (no email) | _nothing — works out of the box once you migrate_ |
+| Save to DB **and** email you on every submission | `RESEND_API_KEY`, `ADMIN_EMAIL`, `FROM_EMAIL` |
 | Inspect submissions over HTTP | `ADMIN_TOKEN` |
 
 ---
 
-## 1. Run the migration
+## Mode 0 — FormSubmit.co (zero backend) ⭐
+
+Drop in **one env var**, get working email delivery. No DB migration,
+no signup, no API key. Best for quickly testing the form on a
+preview deploy.
+
+### Steps
+
+1. Decide which inbox should receive submissions (e.g. `you@gmail.com`).
+2. Add to `.env.local`:
+
+   ```bash
+   NEXT_PUBLIC_FORMSUBMIT_EMAIL=you@gmail.com
+   ```
+
+   For Vercel: **Project → Settings → Environment Variables → Add**,
+   scope **Production** (and Preview if you want test branches to
+   deliver too). Re-deploy after saving.
+
+3. Submit the form once with anything. The first submission triggers
+   FormSubmit's activation flow — your inbox will receive a one-time
+   *"Confirm your email"* link from `formsubmit.co`. Click it once.
+4. Done. Every subsequent submission lands in your inbox immediately,
+   styled as a clean table. Replying to that email goes straight to
+   the person who filled the form (we set `_replyto` automatically).
+
+### What you get (built in)
+
+- ✅ FormSubmit's own anti-spam (Akismet + honeypot — we forward our
+  `website` field as `_honey`)
+- ✅ `_subject` set to "New TransTTS contact: <name> (<company>)"
+- ✅ `_replyto` set to the user's email — hit Reply, talk to them
+- ✅ `_template=table` for clean inline rendering
+- ✅ Captcha disabled (`_captcha=false`) so users see our success card,
+  not FormSubmit's
+
+### Caveats
+
+- Submissions only live in your inbox — no DB row, no admin endpoint
+- If `NEXT_PUBLIC_FORMSUBMIT_EMAIL` is set, the `/api/contact` backend
+  is bypassed entirely. Switch back any time by clearing the var
+- The email address is exposed in the JS bundle. If you want to hide
+  it, FormSubmit also accepts an alias like `xyz123abc` (visit
+  `https://formsubmit.co/<your-email>` once to generate one) — set
+  `NEXT_PUBLIC_FORMSUBMIT_EMAIL=xyz123abc` instead
+
+If/when you outgrow this (need history, CRM export, custom auto-replies),
+clear the env var and the form falls back to Mode 1/2 below — no other
+code changes.
+
+---
+
+## Mode 1 — DB only (no email yet)
+
+The original wiring: every submission goes into the `ContactInquiry`
+table. No email is sent. Useful when payments are already on Postgres
+and you'd rather centralise leads in the DB.
+
+### a. Run the migration
 
 The form writes to a new `ContactInquiry` table.
 
@@ -31,7 +101,7 @@ will run the same SQL against Postgres — no edits needed.
 
 ---
 
-## 2. (Optional) Enable email via Resend
+## Mode 2 — DB + Resend email (full control)
 
 ### a. Sign up
 
@@ -67,7 +137,7 @@ fire on PR previews too).
 
 ---
 
-## 3. (Optional) Enable the admin list endpoint
+## Admin list endpoint (any mode that uses /api/contact)
 
 There is a tiny `GET /api/contact` route that returns the latest
 submissions as JSON. It refuses to serve anything until `ADMIN_TOKEN`
@@ -94,7 +164,7 @@ Returns the most recent inquiries (default 50, max 200) including
 
 ---
 
-## 4. Test the form end-to-end
+## End-to-end test recipes
 
 ### Local
 
@@ -139,7 +209,7 @@ Should return `{ "count": <n>, "items": [ ... ] }`.
 
 ---
 
-## 5. What's protecting the form?
+## What's protecting the form?
 
 | Layer | What it does |
 |---|---|
@@ -156,7 +226,7 @@ For higher traffic, swap `src/lib/rate-limit.ts` to use
 
 ---
 
-## 6. Troubleshooting
+## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
@@ -168,7 +238,7 @@ For higher traffic, swap `src/lib/rate-limit.ts` to use
 
 ---
 
-## 7. Files involved
+## Files involved
 
 ```
 prisma/
