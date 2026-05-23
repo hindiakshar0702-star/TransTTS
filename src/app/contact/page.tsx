@@ -4,6 +4,20 @@ import Navbar from "@/components/Navbar";
 import Link from "next/link";
 import { useToast } from "@/components/Toast";
 
+/**
+ * Where contact submissions are sent.
+ *
+ * - If NEXT_PUBLIC_FORMSUBMIT_EMAIL is set at build time, we POST directly
+ *   to https://formsubmit.co/ajax/<email> — no backend / DB / API key
+ *   required. Submissions land in that inbox.
+ * - Otherwise we fall back to our own POST /api/contact endpoint
+ *   (DB-backed, optional Resend email).
+ *
+ * Both paths preserve the same UX: nice success card, inline errors,
+ * loading state, honeypot.
+ */
+const FORMSUBMIT_TARGET = process.env.NEXT_PUBLIC_FORMSUBMIT_EMAIL || "";
+
 export default function ContactPage() {
   const [formData, setFormData] = useState({
     name: "",
@@ -43,20 +57,10 @@ export default function ContactPage() {
 
     setLoading(true);
     try {
-      const res = await fetch("/api/contact", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...formData, website }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        const msg = data?.error || `Failed to send message (${res.status})`;
-        setError(msg);
-        showToast(msg, "error");
-        setLoading(false);
-        return;
+      if (FORMSUBMIT_TARGET) {
+        await submitToFormSubmit(FORMSUBMIT_TARGET, formData, website);
+      } else {
+        await submitToBackend(formData, website);
       }
 
       setSubmitted(true);
@@ -67,7 +71,7 @@ export default function ContactPage() {
           ? err.message
           : "Could not reach the server. Please try again.";
       setError(msg);
-      showToast("Network error — please retry", "error");
+      showToast(msg.startsWith("Could not") ? "Network error — please retry" : msg, "error");
       setLoading(false);
     }
   };
@@ -281,4 +285,86 @@ export default function ContactPage() {
       </main>
     </>
   );
+}
+
+/* -------------------------------------------------------------------- */
+/* Submission strategies                                                 */
+/* -------------------------------------------------------------------- */
+
+interface FormPayload {
+  name: string;
+  email: string;
+  company: string;
+  teamSize: string;
+  message: string;
+}
+
+/**
+ * POST to our own /api/contact route.
+ * Persists to ContactInquiry, optionally fires admin + auto-reply emails
+ * via Resend (see CONTACT_SETUP.md). Throws on non-2xx.
+ */
+async function submitToBackend(formData: FormPayload, website: string): Promise<void> {
+  const res = await fetch("/api/contact", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...formData, website }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.error || `Failed to send message (${res.status})`);
+  }
+}
+
+/**
+ * POST to FormSubmit.co's AJAX endpoint.
+ *
+ * No signup is required — the first time submissions hit a new email,
+ * FormSubmit sends an activation link to that mailbox. After clicking
+ * the link once, every subsequent submission is delivered immediately.
+ *
+ * `_honey` is FormSubmit's built-in honeypot, so we forward the same
+ * `website` value the rest of the app already collects.
+ */
+async function submitToFormSubmit(
+  emailOrAlias: string,
+  formData: FormPayload,
+  website: string
+): Promise<void> {
+  const url = `https://formsubmit.co/ajax/${encodeURIComponent(emailOrAlias)}`;
+  const subject = `New TransTTS contact: ${formData.name}${
+    formData.company ? ` (${formData.company})` : ""
+  }`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      name: formData.name,
+      email: formData.email,
+      company: formData.company,
+      "Team size": formData.teamSize,
+      message: formData.message,
+      _subject: subject,
+      _replyto: formData.email,
+      _captcha: "false",
+      _template: "table",
+      _honey: website,
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  const succeeded =
+    res.ok && (data?.success === "true" || data?.success === true);
+
+  if (!succeeded) {
+    const detail =
+      typeof data?.message === "string"
+        ? data.message
+        : `FormSubmit error (${res.status})`;
+    throw new Error(detail);
+  }
 }
