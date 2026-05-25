@@ -60,24 +60,21 @@ async function handleCallback(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Server-to-server status check
+    // Server-to-server status check (with retry — see fetchStatusWithRetry).
+    // PhonePe sandbox can take 3-8s to settle after the user is bounced
+    // back, and the FIRST /status call sometimes returns PAYMENT_ERROR
+    // due to a transient network blip even though the payment ultimately
+    // succeeds via the webhook. Without retries we'd permanently mark
+    // a paid order as failed (BUG-014).
     const config = getPhonePeConfig();
     const statusPath = `/pg/v1/status/${config.merchantId}/${order.phonepeMerchantTransactionId}`;
-    const xVerify = computeXVerifyForStatus(statusPath, config.saltKey, config.saltIndex);
-
-    const statusRes = await fetch(`${config.baseUrl}${statusPath}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "X-VERIFY": xVerify,
-        "X-MERCHANT-ID": config.merchantId,
-      },
-      // PhonePe sandbox occasionally takes 4-5s to settle
-      cache: "no-store",
-    });
-
-    const statusJson: PhonePeStatusResponse = await statusRes.json().catch(() => ({}));
+    const statusJson = await fetchStatusWithRetry(
+      `${config.baseUrl}${statusPath}`,
+      statusPath,
+      config.saltKey,
+      config.saltIndex,
+      config.merchantId,
+    );
     const code = statusJson?.code;
     const state = statusJson?.data?.state;
 
@@ -158,4 +155,67 @@ interface PhonePeStatusResponse {
     providerReferenceId?: string;
     paymentInstrument?: Record<string, unknown>;
   };
+}
+
+/* -------------------------------------------------------------------- */
+/* Status fetch with retry (BUG-014)                                     */
+/* -------------------------------------------------------------------- */
+
+/**
+ * PhonePe's settlement is asynchronous. Calling /status the moment the
+ * user lands back on our callback URL frequently returns either:
+ *
+ *   - PAYMENT_PENDING (settlement still in flight)
+ *   - PAYMENT_ERROR with HTTP 5xx (sandbox network blip)
+ *
+ * even though the eventual outcome is success. Marking failed on the
+ * first response means a user with a successful payment sees a
+ * permanently-failed order until manual intervention. Webhooks fix
+ * this asynchronously, but the callback is what the user sees first.
+ *
+ * Retry policy: 3 attempts at 0s, 1.5s, 4s. Stops as soon as we hit
+ * a TERMINAL state (COMPLETED or FAILED) — pending states still retry.
+ * Total worst-case is ~5.5s which is below user patience (most stay
+ * on the redirect spinner for 8-10s anyway).
+ */
+async function fetchStatusWithRetry(
+  url: string,
+  path: string,
+  saltKey: string,
+  saltIndex: string,
+  merchantId: string,
+): Promise<PhonePeStatusResponse> {
+  const delays = [0, 1500, 4000];
+  let lastResponse: PhonePeStatusResponse = {};
+
+  for (const delay of delays) {
+    if (delay > 0) {
+      await new Promise((r) => setTimeout(r, delay));
+    }
+    try {
+      const xVerify = computeXVerifyForStatus(path, saltKey, saltIndex);
+      const res = await fetch(url, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "X-VERIFY": xVerify,
+          "X-MERCHANT-ID": merchantId,
+        },
+        cache: "no-store",
+      });
+      const json = (await res.json().catch(() => ({}))) as PhonePeStatusResponse;
+      lastResponse = json;
+
+      // Terminal states — stop retrying.
+      if (json?.code === "PAYMENT_SUCCESS") return json;
+      if (json?.data?.state === "COMPLETED") return json;
+      if (json?.data?.state === "FAILED") return json;
+      // PENDING / transient errors → retry.
+    } catch (err) {
+      console.warn("[phonepe/callback] /status retry failed:", err);
+    }
+  }
+
+  return lastResponse;
 }
