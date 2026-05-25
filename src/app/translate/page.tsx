@@ -72,6 +72,16 @@ function TranslateContent() {
       setEngine(data.engine);
       setStatus("done");
 
+      // Friendly toast if MyMemory's auto-detect picked something
+      // surprising (or different from what the dropdown showed).
+      if (data.detectedLang && sourceLang === "auto") {
+        const langLabel =
+          (LANGUAGES as Record<string, { name: string; flag: string }>)[
+            data.detectedLang
+          ]?.name ?? data.detectedLang;
+        showToast(`Detected source language: ${langLabel}`, "info");
+      }
+
       addToHistory({
         type: "translate",
         title: sourceText.substring(0, 60) + (sourceText.length > 60 ? "..." : ""),
@@ -93,7 +103,12 @@ function TranslateContent() {
   };
 
   const swapLanguages = () => {
-    if (sourceLang === "auto") return;
+    // BUG-028: silent no-op when source is "auto" was confusing.
+    // Tell the user why and offer the obvious fix.
+    if (sourceLang === "auto") {
+      showToast("Pick an explicit source language to swap.", "info");
+      return;
+    }
     setSourceLang(targetLang);
     setTargetLang(sourceLang);
     setSourceText(translatedText);
@@ -105,12 +120,34 @@ function TranslateContent() {
     showToast("Translation copied!", "success");
   };
 
+  /**
+   * Use the browser's Web Speech API for the in-page "🔊 Speak" buttons.
+   * BUG-029: many browsers silently fall back to English for languages
+   * they don't ship voices for (Bengali, Tamil, Telugu, Marathi, Gujarati,
+   * Urdu...). We check up-front and tell the user to use /tts instead,
+   * which uses the higher-quality msedge-tts neural voices.
+   */
   const speakText = (text: string, lang: string) => {
+    if (!text.trim()) return;
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      showToast("Your browser does not support speech synthesis.", "error");
+      return;
+    }
+    const wantedLang = lang === "auto" ? "en" : lang;
+    const voices = window.speechSynthesis.getVoices();
+    const hasVoice = voices.some((v) => v.lang.toLowerCase().startsWith(wantedLang));
+    if (!hasVoice && voices.length > 0) {
+      showToast(
+        `No browser voice for "${wantedLang}". Try the Voice tab for neural TTS.`,
+        "info",
+      );
+      return;
+    }
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = lang === "auto" ? "en" : lang;
+    utterance.lang = wantedLang;
     utterance.rate = 0.9;
-    speechSynthesis.cancel();
-    speechSynthesis.speak(utterance);
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
   };
 
   const langEntries = Object.entries(LANGUAGES).filter(([code]) => code !== "auto");
