@@ -172,18 +172,28 @@ function TTSContent() {
 
           {/* Voice selection */}
           <div className="fade-in" style={{ marginTop: 24 }}>
-            <label className="form-label">🎧 Select Voice ({VOICES.length} Neural Voices Available)</label>
-            <div className="voice-grid">
-              {VOICES.map((v) => (
-                <div
-                  key={v.id}
-                  className={`voice-card ${voice === v.id ? "selected" : ""}`}
-                  onClick={() => setVoice(v.id)}
-                >
-                  <div className="voice-name">{v.name}</div>
-                  <div className="voice-desc">{v.desc}</div>
-                </div>
-              ))}
+            <label className="form-label" id="voice-grid-label">🎧 Select Voice ({VOICES.length} Neural Voices Available)</label>
+            <div
+              className="voice-grid"
+              role="radiogroup"
+              aria-labelledby="voice-grid-label"
+            >
+              {VOICES.map((v) => {
+                const isSelected = voice === v.id;
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={isSelected}
+                    className={`voice-card ${isSelected ? "selected" : ""}`}
+                    onClick={() => setVoice(v.id)}
+                  >
+                    <div className="voice-name">{v.name}</div>
+                    <div className="voice-desc">{v.desc}</div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
