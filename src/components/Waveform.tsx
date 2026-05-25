@@ -6,52 +6,90 @@ interface WaveformProps {
   isPlaying: boolean;
 }
 
+/**
+ * `createMediaElementSource` may only be called ONCE per
+ * <audio> element. If React reuses the same element across re-renders
+ * (which it does), calling it a second time throws:
+ *
+ *   InvalidStateError: HTMLMediaElement already connected previously
+ *   to a different MediaElementSourceNode.
+ *
+ * Old code worked around this with a single `initializedRef` flag
+ * scoped to the component instance — fine on first mount, but the
+ * waveform stayed frozen if the parent re-mounted Waveform with the
+ * same <audio> element (e.g. after "Generate New").
+ *
+ * Fix: cache the source node + analyser PER HTMLMediaElement in a
+ * module-level WeakMap. The same element is given the same nodes;
+ * the GC can still collect them when the audio element goes away.
+ */
+
+type AudioNodes = {
+  ctx: AudioContext;
+  analyser: AnalyserNode;
+  source: MediaElementAudioSourceNode;
+};
+
+const ELEMENT_NODES = new WeakMap<HTMLMediaElement, AudioNodes>();
+
+function getOrCreateNodes(audio: HTMLMediaElement): AudioNodes | null {
+  const cached = ELEMENT_NODES.get(audio);
+  if (cached) return cached;
+
+  try {
+    type WindowWithLegacyAudio = Window & {
+      webkitAudioContext?: typeof AudioContext;
+    };
+    const AudioCtor: typeof AudioContext | undefined =
+      typeof window === "undefined"
+        ? undefined
+        : window.AudioContext ||
+          (window as WindowWithLegacyAudio).webkitAudioContext;
+    if (!AudioCtor) return null;
+
+    const ctx = new AudioCtor();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 64;
+    const source = ctx.createMediaElementSource(audio);
+    source.connect(analyser);
+    analyser.connect(ctx.destination);
+
+    const nodes = { ctx, analyser, source };
+    ELEMENT_NODES.set(audio, nodes);
+    return nodes;
+  } catch (err) {
+    console.warn("Waveform: AudioContext setup failed:", err);
+    return null;
+  }
+}
+
 export default function Waveform({ audioRef, isPlaying }: WaveformProps) {
   const [bars, setBars] = useState<number[]>(Array(32).fill(4));
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const animRef = useRef<number>(0);
-  const ctxRef = useRef<AudioContext | null>(null);
-  const initializedRef = useRef(false);
 
   useEffect(() => {
-    if (!audioRef.current || initializedRef.current) return;
+    const audio = audioRef.current;
+    if (!audio) return;
 
-    try {
-      // Create audio context only once
-      const ctx = new AudioContext();
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 64;
-      const source = ctx.createMediaElementSource(audioRef.current);
-      source.connect(analyser);
-      analyser.connect(ctx.destination);
-      ctxRef.current = ctx;
-      analyserRef.current = analyser;
-      sourceRef.current = source;
-      initializedRef.current = true;
-    } catch (err) {
-      // MediaElementAudioSourceNode may already be created for this element
-      console.warn("Waveform: AudioContext setup failed:", err);
-    }
-  }, [audioRef]);
+    const nodes = getOrCreateNodes(audio);
+    if (!nodes) return;
 
-  useEffect(() => {
-    if (!isPlaying || !analyserRef.current) {
+    if (!isPlaying) {
       cancelAnimationFrame(animRef.current);
       setBars(Array(32).fill(4));
       return;
     }
 
-    // Resume AudioContext if suspended (browser autoplay policy)
-    if (ctxRef.current && ctxRef.current.state === "suspended") {
-      ctxRef.current.resume();
+    if (nodes.ctx.state === "suspended") {
+      // Browser autoplay policy: user gesture is required to start audio
+      // contexts. Resuming here works because isPlaying flips on click.
+      nodes.ctx.resume().catch(() => {});
     }
 
-    const analyser = analyserRef.current;
-    const data = new Uint8Array(analyser.frequencyBinCount);
+    const data = new Uint8Array(nodes.analyser.frequencyBinCount);
 
     const animate = () => {
-      analyser.getByteFrequencyData(data);
+      nodes.analyser.getByteFrequencyData(data);
       const newBars = Array.from({ length: 32 }, (_, i) => {
         const val = data[i] || 0;
         return Math.max(4, (val / 255) * 56);
@@ -61,11 +99,14 @@ export default function Waveform({ audioRef, isPlaying }: WaveformProps) {
     };
 
     animate();
-    return () => cancelAnimationFrame(animRef.current);
-  }, [isPlaying]);
+
+    return () => {
+      cancelAnimationFrame(animRef.current);
+    };
+  }, [isPlaying, audioRef]);
 
   return (
-    <div className="waveform-container">
+    <div className="waveform-container" aria-hidden="true">
       {bars.map((h, i) => (
         <div
           key={i}
