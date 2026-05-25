@@ -18,13 +18,15 @@ export {
   formatCycle,
   getBasePrice,
   getOrderAmountInPaise,
+  getPriceBreakdown,
+  formatInrFromPaise,
   computeValidUntil,
   cycleSavingsPercent,
   monthlyEquivalent,
   isValidPlan,
   isValidCycle,
 } from "./pricing";
-export type { PlanId, Cycle, CycleKey } from "./pricing";
+export type { PlanId, Cycle, CycleKey, PriceBreakdown } from "./pricing";
 
 /**
  * Lazy-initialised Razorpay server SDK client.

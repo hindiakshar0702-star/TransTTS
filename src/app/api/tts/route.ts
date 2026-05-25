@@ -1,103 +1,103 @@
 import { NextRequest, NextResponse } from "next/server";
-import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 import prisma from "@/lib/prisma";
-import { generateId } from "@/lib/utils";
-import { getGeneratedDir } from "@/lib/server-utils";
-import fs from "fs";
-import path from "path";
+import {
+  synthesizeMp3,
+  resolveVoice,
+  TTS_MAX_TEXT,
+} from "@/lib/tts";
 
-const VOICES: Record<string, string> = {
-  "hi-female": "hi-IN-SwaraNeural",
-  "hi-male": "hi-IN-MadhurNeural",
-  "en-female": "en-US-JennyNeural",
-  "en-male": "en-US-GuyNeural",
-  "en-uk-female": "en-GB-SoniaNeural",
-  "en-uk-male": "en-GB-RyanNeural",
-  "es-female": "es-ES-ElviraNeural",
-  "fr-female": "fr-FR-DeniseNeural",
-  "de-female": "de-DE-KatjaNeural",
-  "ja-female": "ja-JP-NanamiNeural",
-  "ko-female": "ko-KR-SunHiNeural",
-  "ar-male": "ar-SA-HamedNeural",
-  "pt-female": "pt-BR-FranciscaNeural",
-  "bn-female": "bn-IN-TanishaaNeural",
-  "ta-female": "ta-IN-PallaviNeural",
-  "te-female": "te-IN-ShrutiNeural",
-  "mr-female": "mr-IN-AarohiNeural",
-  "gu-female": "gu-IN-DhwaniNeural",
-  "ur-male": "ur-PK-AsadNeural",
-};
+export const runtime = "nodejs";
 
+/**
+ * POST /api/tts
+ *
+ * Body: { text: string, voice?: string }
+ *
+ * Returns:
+ *   {
+ *     id: string,            // Job.id — stable, doubles as the persistent URL slug
+ *     audioUrl: string,      // /api/tts/audio/<jobId>  (regenerated on demand)
+ *     dataUrl: string,       // data:audio/mpeg;base64,...   (instant <audio src>)
+ *     voice: string,         // canonical MS voice id used
+ *     textLength: number,
+ *   }
+ *
+ * Why both URLs?
+ *   - `dataUrl` is consumed by the page that just ran the synthesis so
+ *     the user can hit ▶ with zero round-trips. No filesystem state.
+ *   - `audioUrl` is what we persist in history. The audio is rebuilt from
+ *     the Job's `text` + `voice` columns on demand by `/api/tts/audio/[id]`,
+ *     so the link never 404s — even after a Vercel deploy or cold start.
+ *
+ * This eliminates BUG-002 (TTS audio FS persistence) without requiring
+ * external object storage.
+ */
 export async function POST(req: NextRequest) {
   let jobId: string | null = null;
   try {
-    const { text, voice } = await req.json();
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
 
-    if (!text) {
+    const { text, voice } = body as { text?: unknown; voice?: unknown };
+
+    if (typeof text !== "string" || text.trim().length === 0) {
       return NextResponse.json({ error: "No text provided" }, { status: 400 });
     }
-
-    if (text.length > 5000) {
-      return NextResponse.json({ error: "Text too long. Maximum 5000 characters." }, { status: 400 });
+    if (text.length > TTS_MAX_TEXT) {
+      return NextResponse.json(
+        { error: `Text too long. Maximum ${TTS_MAX_TEXT} characters.` },
+        { status: 400 },
+      );
     }
 
-    const msVoice = VOICES[voice] || VOICES["hi-female"];
+    const msVoice = resolveVoice(typeof voice === "string" ? voice : null);
 
-    // Create job in DB
+    // Persist the Job FIRST. If TTS fails, the row is already there with
+    // status='processing' and the catch block will downgrade it to error.
     const job = await prisma.job.create({
       data: {
         type: "tts",
         title: text.substring(0, 80),
         status: "processing",
-        text: text.substring(0, 2000),
+        text: text.substring(0, TTS_MAX_TEXT),
         voice: msVoice,
       },
     });
     jobId = job.id;
 
-    const generatedDir = getGeneratedDir();
-    const fileId = generateId();
-    const tempDir = path.join(generatedDir, fileId);
-    fs.mkdirSync(tempDir, { recursive: true });
+    const audio = await synthesizeMp3(msVoice, text);
 
-    const tts = new MsEdgeTTS();
-    await tts.setMetadata(msVoice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-    await tts.toFile(tempDir, text);
-
-    const generatedFile = path.join(tempDir, "audio.mp3");
-    const finalPath = path.join(generatedDir, `${fileId}.mp3`);
-
-    if (fs.existsSync(generatedFile)) {
-      fs.renameSync(generatedFile, finalPath);
-      try { fs.rmdirSync(tempDir); } catch { /* ignore */ }
-    } else {
-      throw new Error("Audio file was not generated");
-    }
-
-    const audioUrl = `/api/tts/audio/${fileId}`;
-
-    // Save to DB
+    const audioUrl = `/api/tts/audio/${jobId}`;
     await prisma.job.update({
-      where: { id: job.id },
+      where: { id: jobId },
       data: { status: "completed", progress: 100, audioUrl },
     });
 
+    // base64 of a 24kHz/96kbps MP3 for 5,000 chars ≈ 100-300 KB —
+    // well under any practical JSON / data-URL limit.
+    const dataUrl = `data:audio/mpeg;base64,${audio.toString("base64")}`;
+
     return NextResponse.json({
-      id: fileId,
+      id: jobId,
       audioUrl,
+      dataUrl,
       voice: msVoice,
       textLength: text.length,
     });
   } catch (error: unknown) {
     console.error("TTS error:", error);
-    const message = error instanceof Error ? error.message : "TTS generation failed";
+    const message =
+      error instanceof Error ? error.message : "TTS generation failed";
 
-    // Update job as failed
     if (jobId) {
-      await prisma.job.update({
-        where: { id: jobId },
-        data: { status: "error", errorMsg: message },
-      }).catch(() => {});
+      await prisma.job
+        .update({
+          where: { id: jobId },
+          data: { status: "error", errorMsg: message },
+        })
+        .catch(() => {});
     }
 
     return NextResponse.json({ error: message }, { status: 500 });

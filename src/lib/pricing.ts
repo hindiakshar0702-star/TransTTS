@@ -101,14 +101,80 @@ export function getBasePrice(plan: PlanId, cycle: string): number {
 }
 
 /**
+ * Full price breakdown — single source of truth for client + server.
+ *
+ * All amounts are computed in PAISE (the same units Razorpay/PhonePe charge in)
+ * so the UI summary, the gateway charge, and the GST line item stay byte-exact.
+ *
+ * Returning both paise (integer, exact) and INR (formatted) lets each call
+ * site pick whichever it needs without re-doing the math.
+ */
+export interface PriceBreakdown {
+  /** Base subscription price, INR rupees (no GST). e.g. 299 */
+  baseInr: number;
+  /** Base subscription price in paise. e.g. 29_900 */
+  basePaise: number;
+  /** GST in paise (rounded once, here, never re-rounded downstream). */
+  gstPaise: number;
+  /** basePaise + gstPaise */
+  totalPaise: number;
+  /** GST in INR — may have decimals (e.g. 53.82). */
+  gstInr: number;
+  /** Total amount payable in INR — may have decimals (e.g. 352.82). */
+  totalInr: number;
+  /** GST percentage as integer for display (e.g. 18). */
+  gstPercent: number;
+}
+
+/**
+ * Compute the canonical price breakdown for (plan, cycle).
+ * Same numbers used by the upgrade page UI, /api/razorpay/create-order,
+ * /api/phonepe/create-order, and the success-page receipt.
+ */
+export function getPriceBreakdown(plan: PlanId, cycle: string): PriceBreakdown {
+  const baseInr = getBasePrice(plan, cycle);
+  const basePaise = baseInr * 100; // exact: rupees * 100
+  const gstPaise = Math.round(basePaise * GST_RATE);
+  const totalPaise = basePaise + gstPaise;
+  return {
+    baseInr,
+    basePaise,
+    gstPaise,
+    totalPaise,
+    gstInr: gstPaise / 100,
+    totalInr: totalPaise / 100,
+    gstPercent: Math.round(GST_RATE * 100),
+  };
+}
+
+/**
  * Total amount payable in PAISE (Razorpay/PhonePe always use paise).
  * Includes 18% GST on top of the base price.
+ *
+ * Thin wrapper around `getPriceBreakdown(...).totalPaise` — kept for
+ * backwards-compatibility with API routes that don't need the full breakdown.
  */
 export function getOrderAmountInPaise(plan: PlanId, cycle: string): number {
-  const base = getBasePrice(plan, cycle);
-  if (base <= 0) return 0;
-  const withGst = base * (1 + GST_RATE);
-  return Math.round(withGst * 100);
+  if (!isValidPlan(plan)) return 0;
+  return getPriceBreakdown(plan, cycle).totalPaise;
+}
+
+/**
+ * Format a paise amount as an INR string with the right precision:
+ *   - Whole rupees → "1,234"
+ *   - Sub-rupee paise → "1,234.56"
+ *
+ * Uses the en-IN locale so digit grouping matches Indian conventions
+ * (e.g. ₹1,23,456).
+ */
+export function formatInrFromPaise(paise: number): string {
+  if (!Number.isFinite(paise)) return "0";
+  const rupees = paise / 100;
+  const hasFraction = paise % 100 !== 0;
+  return rupees.toLocaleString("en-IN", {
+    minimumFractionDigits: hasFraction ? 2 : 0,
+    maximumFractionDigits: 2,
+  });
 }
 
 /**

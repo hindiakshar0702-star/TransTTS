@@ -5,6 +5,8 @@ import Navbar from "@/components/Navbar";
 import ToolNav from "@/components/ToolNav";
 import { useToast } from "@/components/Toast";
 
+const ADMIN_TOKEN_STORAGE_KEY = "transtts_admin_token";
+
 interface Job {
   id: string;
   type: string;
@@ -53,21 +55,108 @@ export default function DashboardPage() {
 
   useEffect(() => { fetchJobs(); }, [fetchJobs]);
 
+  /**
+   * Pull the admin token from localStorage (set once via the operator
+   * prompt below). Server-side `DELETE /api/jobs(/[id])` requires this.
+   */
+  const getAdminToken = (): string | null => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY);
+  };
+
+  /**
+   * Prompts the operator for the admin token and stores it. Returns
+   * the token (or null if cancelled). Tokens never leave the browser
+   * except as a Bearer header on delete calls.
+   */
+  const promptForAdminToken = (): string | null => {
+    if (typeof window === "undefined") return null;
+    const existing = localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY);
+    const entered = window.prompt(
+      "Admin token required for delete actions.\n\nPaste the value of ADMIN_TOKEN here. It will be stored in this browser only.",
+      existing || "",
+    );
+    if (!entered) return null;
+    localStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, entered);
+    return entered;
+  };
+
+  /**
+   * Wraps a fetch so we always:
+   *   1. Read the admin token from localStorage
+   *   2. Send it as `Authorization: Bearer ...`
+   *   3. On 401, give the operator one chance to re-enter & retry
+   *   4. On 503, surface the "ADMIN_TOKEN not set on server" message
+   */
+  const adminFetch = async (
+    url: string,
+    init: RequestInit = {},
+  ): Promise<Response> => {
+    let token = getAdminToken();
+    if (!token) token = promptForAdminToken();
+    if (!token) throw new Error("Admin token required");
+
+    const send = (t: string) =>
+      fetch(url, {
+        ...init,
+        headers: {
+          ...(init.headers || {}),
+          Authorization: `Bearer ${t}`,
+        },
+      });
+
+    let res = await send(token);
+    if (res.status === 401) {
+      // Token rejected — give the operator one chance to fix it.
+      const retried = promptForAdminToken();
+      if (!retried) throw new Error("Admin token rejected");
+      res = await send(retried);
+      if (res.status === 401) {
+        localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+        throw new Error("Admin token rejected");
+      }
+    }
+    if (res.status === 503) {
+      throw new Error(
+        "Server has no ADMIN_TOKEN configured. Set the env var, then retry.",
+      );
+    }
+    return res;
+  };
+
   const handleDelete = async (id: string) => {
     try {
-      await fetch(`/api/jobs/${id}`, { method: "DELETE" });
+      const res = await adminFetch(`/api/jobs/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Delete failed (${res.status})`);
+      }
       fetchJobs();
       showToast("Job deleted", "info");
-    } catch { showToast("Delete failed", "error"); }
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Delete failed",
+        "error",
+      );
+    }
   };
 
   const handleClearAll = async () => {
     if (!confirm("Clear all history? This cannot be undone.")) return;
     try {
-      await fetch("/api/jobs", { method: "DELETE" });
+      const res = await adminFetch("/api/jobs", { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Clear failed (${res.status})`);
+      }
       fetchJobs();
       showToast("History cleared", "success");
-    } catch { showToast("Clear failed", "error"); }
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Clear failed",
+        "error",
+      );
+    }
   };
 
   const typeIcon = (type: string) =>

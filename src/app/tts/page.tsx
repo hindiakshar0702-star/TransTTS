@@ -43,7 +43,12 @@ function TTSContent() {
   const [voice, setVoice] = usePersistedState("tts_voice", "hi-female");
   const [speed, setSpeed] = usePersistedState("tts_speed", 1.0);
   const [status, setStatus] = usePersistedState<"idle" | "generating" | "done" | "error">("tts_status", "idle");
+  // The persistent URL points at /api/tts/audio/<jobId> — used by the
+  // dashboard / history. Survives reloads and deploys.
   const [audioUrl, setAudioUrl] = usePersistedState("tts_audioUrl", "");
+  // Inline data URL — set per-generation, not persisted (it would blow
+  // up sessionStorage). Used as the actual <audio src> for instant play.
+  const [audioPlayUrl, setAudioPlayUrl] = useState("");
   const [error, setError] = useState("");
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -60,7 +65,7 @@ function TTSContent() {
   const handleReset = () => {
     clearPersistedState("tts_");
     setText(""); setVoice("hi-female"); setSpeed(1.0);
-    setStatus("idle"); setAudioUrl(""); setError("");
+    setStatus("idle"); setAudioUrl(""); setAudioPlayUrl(""); setError("");
     setIsPlaying(false); setCurrentTime(0); setAudioDuration(0);
   };
 
@@ -69,6 +74,7 @@ function TTSContent() {
     setStatus("generating");
     setError("");
     setAudioUrl("");
+    setAudioPlayUrl("");
 
     try {
       const res = await fetch("/api/tts", {
@@ -84,14 +90,18 @@ function TTSContent() {
           try {
             const data = JSON.parse(responseText);
             errorMsg = data.error || errorMsg;
-          } catch (e) {
+          } catch {
             errorMsg = `Server error: ${res.status} ${res.statusText}`;
           }
-        } catch (e) {}
+        } catch { /* ignore */ }
         throw new Error(errorMsg);
       }
 
       const data = await res.json();
+      // dataUrl plays instantly with zero round-trips; audioUrl is the
+      // durable, regenerate-on-demand URL we persist for history/dashboard.
+      const playSrc = data.dataUrl || data.audioUrl;
+      setAudioPlayUrl(playSrc);
       setAudioUrl(data.audioUrl);
       setStatus("done");
 
@@ -103,6 +113,8 @@ function TTSContent() {
         data: {
           text: text.substring(0, 500),
           voice: selectedVoice?.name || voice,
+          // Durable URL — even after deploy, /api/tts/audio/<id>
+          // re-synthesises from the Job row.
           audioUrl: data.audioUrl,
         },
       });
@@ -131,6 +143,9 @@ function TTSContent() {
   const downloadAudio = () => {
     if (!audioUrl) return;
     const a = document.createElement("a");
+    // Always download from the durable, server-side URL so the file is
+    // a clean MP3 (data: URLs work too, but the server URL respects
+    // ?download=1 to set Content-Disposition).
     a.href = audioUrl + "?download=1";
     a.download = `speech-${voice}-${Date.now()}.mp3`;
     a.click();
@@ -235,10 +250,25 @@ function TTSContent() {
                   <span className="badge badge-success">✅ Ready to Play</span>
                 </div>
 
-                <audio ref={audioRef} src={audioUrl} crossOrigin="anonymous"
+                {/*
+                  We key the <audio> element on the active source — when the
+                  user generates a NEW clip, React unmounts the old element
+                  cleanly. This sidesteps Waveform.tsx's "MediaElement already
+                  connected" InvalidStateError on regenerate.
+
+                  audioPlayUrl (a data: URL on a fresh generation, or the
+                  persistent /api/tts/audio/<id> URL on restore-from-storage)
+                  is what the browser actually plays.
+                */}
+                <audio
+                  key={audioPlayUrl || audioUrl}
+                  ref={audioRef}
+                  src={audioPlayUrl || audioUrl}
+                  crossOrigin="anonymous"
                   onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime || 0)}
                   onLoadedMetadata={() => setAudioDuration(audioRef.current?.duration || 0)}
-                  onEnded={() => setIsPlaying(false)} />
+                  onEnded={() => setIsPlaying(false)}
+                />
 
                 <Waveform audioRef={audioRef} isPlaying={isPlaying} />
 

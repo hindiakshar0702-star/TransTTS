@@ -93,13 +93,29 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // Razorpay's TS types declare `order.amount` as `string | number` even
+    // though prod always returns a number. Coerce defensively — a NaN here
+    // would crash the Prisma write with a confusing error and leave the
+    // user without a record of the order they're about to be charged for.
+    const orderAmount = Number(order.amount);
+    if (!Number.isFinite(orderAmount) || orderAmount <= 0) {
+      console.error(
+        "Razorpay returned non-finite amount; expected paise integer",
+        { orderId: order.id, raw: order.amount },
+      );
+      return NextResponse.json(
+        { error: "Payment gateway returned an invalid amount. Please retry." },
+        { status: 502 },
+      );
+    }
+
     // Persist order to our DB so we can verify later & track status
     await prisma.order.create({
       data: {
         razorpayOrderId: order.id,
         plan,
         cycle,
-        amount: Number(order.amount),
+        amount: orderAmount,
         currency: "INR",
         status: "created",
         userEmail: email || null,
@@ -109,7 +125,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       orderId: order.id,
-      amount: Number(order.amount),
+      amount: orderAmount,
       currency: order.currency,
       keyId: publicKeyId,
       planName: PLAN_NAMES[plan],

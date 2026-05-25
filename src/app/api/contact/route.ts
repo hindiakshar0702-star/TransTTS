@@ -7,6 +7,7 @@ import {
   htmlToText,
 } from "@/lib/email";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
+import { checkAdmin } from "@/lib/admin-auth";
 
 export const runtime = "nodejs";
 
@@ -188,26 +189,16 @@ export async function POST(req: NextRequest) {
  * Tiny operator endpoint so the form can be tested without spinning up
  * Prisma Studio. Returns the most recent inquiries.
  *
- * Security: requires ADMIN_TOKEN env var to be set, and the request to
- * pass the same value via ?token= or X-Admin-Token header. Never gate
- * with a hardcoded password and never enable this without a token.
+ * Security:
+ *   - Requires `ADMIN_TOKEN` env var to be set on the server.
+ *   - Token can be sent as `?token=`, `x-admin-token` header, or
+ *     `Authorization: Bearer ...`.
+ *   - Compared in CONSTANT TIME (timingSafeEqual) — see lib/admin-auth.
  */
 export async function GET(req: NextRequest) {
-  const adminToken = process.env.ADMIN_TOKEN;
-  if (!adminToken) {
-    return NextResponse.json(
-      { error: "Admin endpoint not configured (set ADMIN_TOKEN env var)." },
-      { status: 503 }
-    );
-  }
-
-  const provided =
-    req.nextUrl.searchParams.get("token") ||
-    req.headers.get("x-admin-token") ||
-    "";
-
-  if (provided !== adminToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = checkAdmin(req);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.message }, { status: auth.status });
   }
 
   const limit = Math.min(

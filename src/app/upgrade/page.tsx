@@ -15,7 +15,8 @@ import {
   cycleMonths,
   cycleSavingsPercent,
   formatCycle,
-  GST_RATE,
+  getPriceBreakdown,
+  formatInrFromPaise,
 } from "@/lib/pricing";
 
 type UiPlanId = PlanId; // "starter" | "pro" | "enterprise"
@@ -252,6 +253,10 @@ function UpgradeContent() {
   const isEnterprise = selected === "enterprise";
 
   /* -------- Pricing math (only for non-enterprise paid tiers) -------- */
+  // Single source of truth: same breakdown the server uses to charge the
+  // gateway. UI display, GST line, and final total are all derived from
+  // `breakdown.*Paise` so they cannot drift by even one paisa.
+  const breakdown = isEnterprise ? null : getPriceBreakdown(selected, cycle);
   const totalPrice = isEnterprise ? 0 : getBasePrice(selected, cycle);
   const perMonth = isEnterprise ? 0 : monthlyEquivalent(selected, cycle);
   const months = cycleMonths(cycle);
@@ -261,8 +266,14 @@ function UpgradeContent() {
     !isEnterprise && months > 1
       ? Math.max(0, monthlyEquivalentBase * months - totalPrice)
       : 0;
-  const gst = Math.round(totalPrice * GST_RATE);
-  const total = totalPrice + gst;
+  const gstDisplay = breakdown ? formatInrFromPaise(breakdown.gstPaise) : "0";
+  const totalDisplay = breakdown ? formatInrFromPaise(breakdown.totalPaise) : "0";
+  // Effective per-month for multi-year plans, computed from totalPaise so
+  // it never disagrees with the headline total.
+  const effectiveMonthlyDisplay =
+    breakdown && months > 1
+      ? formatInrFromPaise(Math.round(breakdown.totalPaise / months))
+      : "0";
 
   /* -------------------------------------------------------------- */
   /* Validation                                                      */
@@ -435,8 +446,8 @@ function UpgradeContent() {
   const buttonLabel = isEnterprise
     ? "💬 Contact Sales for Custom Pricing"
     : provider === "phonepe"
-    ? `📱 Pay ₹${total.toLocaleString()} with PhonePe`
-    : `🔒 Pay ₹${total.toLocaleString()} with Razorpay`;
+    ? `📱 Pay ₹${totalDisplay} with PhonePe`
+    : `🔒 Pay ₹${totalDisplay} with Razorpay`;
 
   return (
     <>
@@ -642,7 +653,7 @@ function UpgradeContent() {
                 )}
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                   <span style={{ color: "var(--text-dim)" }}>GST (18%)</span>
-                  <span>₹{gst.toLocaleString()}</span>
+                  <span>₹{gstDisplay}</span>
                 </div>
                 <div style={{
                   borderTop: "1px solid var(--border)", paddingTop: 12, marginTop: 4,
@@ -650,11 +661,11 @@ function UpgradeContent() {
                   fontSize: "1.05rem",
                 }}>
                   <span>Total payable</span>
-                  <span className="gradient-text">₹{total.toLocaleString()}</span>
+                  <span className="gradient-text">₹{totalDisplay}</span>
                 </div>
                 {months > 1 && (
                   <div style={{ marginTop: 10, fontSize: "0.8rem", color: "var(--text-muted)", textAlign: "center" }}>
-                    Effective ₹{Math.round(total / months).toLocaleString()}/month for the next {formatCycle(cycle).toLowerCase()}
+                    Effective ₹{effectiveMonthlyDisplay}/month for the next {formatCycle(cycle).toLowerCase()}
                   </div>
                 )}
               </div>
