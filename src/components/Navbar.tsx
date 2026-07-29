@@ -1,18 +1,40 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useToast } from "@/components/Toast";
 
 export default function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { showToast } = useToast();
+  
   const isApp = pathname !== "/";
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setIsLoggedIn(localStorage.getItem("isLoggedIn") === "true");
+    }
+  }, [pathname]);
+
+  const handleSignOut = () => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("isLoggedIn");
+      localStorage.removeItem("userEmail");
+      localStorage.removeItem("userName");
+      setIsLoggedIn(false);
+      showToast("Signed out successfully.", "info");
+      router.push("/");
+    }
+  };
 
   const appLinks = [
+    { href: "/record", icon: "🎙️", label: "Voice Recorder" },
     { href: "/transcribe", icon: "🎤", label: "Transcribe" },
     { href: "/translate", icon: "🌐", label: "Translate" },
     { href: "/tts", icon: "🔊", label: "Voice Generator" },
-    { href: "/dashboard", icon: "📊", label: "Dashboard" },
   ];
 
   return (
@@ -37,16 +59,21 @@ export default function Navbar() {
             <>
               <li><a href="#features">Features</a></li>
               <li><a href="#how-it-works">How It Works</a></li>
-              <li><Link href="/pricing">Pricing</Link></li>
+              <li><Link href="/pricing">Free Plan</Link></li>
             </>
           )}
         </ul>
 
-        <div className="nav-actions">
-          {isApp ? (
-            <Link href="/" className="btn btn-ghost">← Home</Link>
+        <div className="nav-actions" style={{ gap: "12px" }}>
+          {isLoggedIn ? (
+            <>
+              <button onClick={handleSignOut} className="btn btn-danger btn-sm">Sign Out</button>
+            </>
           ) : (
-            <Link href="/transcribe" className="btn btn-primary">🚀 Start Free</Link>
+            <>
+              <Link href="/login" className="btn btn-ghost btn-sm">Sign In</Link>
+              <Link href="/transcribe" className="btn btn-primary btn-sm">🚀 Start Free</Link>
+            </>
           )}
 
           {/* Hamburger button (mobile only) */}

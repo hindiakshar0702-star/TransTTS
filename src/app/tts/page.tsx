@@ -1,8 +1,7 @@
 "use client";
 import { useState, useRef, useEffect, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
-import Navbar from "@/components/Navbar";
-import ToolNav from "@/components/ToolNav";
+import { useSearchParams, useRouter } from "next/navigation";
+import Sidebar from "@/components/Sidebar";
 import { useToast } from "@/components/Toast";
 import { usePersistedState, clearPersistedState } from "@/hooks/usePersistedState";
 import { addToHistory } from "@/lib/history";
@@ -38,7 +37,9 @@ export default function TTSPage() {
 }
 
 function TTSContent() {
+  const [isAuth, setIsAuth] = useState(false);
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [text, setText] = usePersistedState("tts_text", "");
   const [voice, setVoice] = usePersistedState("tts_voice", "hi-female");
   const [speed, setSpeed] = usePersistedState("tts_speed", 1.0);
@@ -51,10 +52,31 @@ function TTSContent() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const { showToast } = useToast();
 
+  // Auth Guard
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const loggedIn = localStorage.getItem("isLoggedIn") === "true";
+      if (!loggedIn) {
+        showToast("Please sign in to access this tool.", "error");
+        router.push("/login?redirect=/tts");
+      } else {
+        setIsAuth(true);
+      }
+    }
+  }, [router]);
+
   useEffect(() => {
     const t = searchParams.get("text");
     if (t) { setText(t); setStatus("idle"); }
   }, [searchParams]);
+
+  if (!isAuth) {
+    return (
+      <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", background: "var(--bg)", color: "var(--text)" }}>
+        <div className="spinner" style={{ width: 40, height: 40 }}></div>
+      </div>
+    );
+  }
 
   const handleReset = () => {
     clearPersistedState("tts_");
@@ -138,16 +160,15 @@ function TTSContent() {
   const selectedVoice = VOICES.find((v) => v.id === voice);
 
   return (
-    <>
-      <Navbar />
-      <main className="app-page">
-        <div className="container">
-          <div className="app-header fade-in">
-            <h1>🔊 <span className="gradient-text">AI Voice Generator</span></h1>
-            <p>Crystal-clear neural voices for Hindi, English &amp; 15+ languages — completely FREE!</p>
-          </div>
-
-          <ToolNav />
+    <div className="dashboard-layout">
+      <Sidebar active="tts" />
+      <div className="dashboard-content-wrapper">
+        <div className="app-header fade-in" style={{ padding: 0, marginBottom: "32px", textAlign: "left" }}>
+          <h1 style={{ fontSize: "2.4rem", display: "flex", alignItems: "center", gap: "12px" }}>
+            🔊 <span className="gradient-text">AI Voice Generator Board</span>
+          </h1>
+          <p>Crystal-clear neural voices for Hindi, English &amp; 15+ languages in a modular grid</p>
+        </div>
 
           {/* Free badge */}
           <div className="fade-in" style={{ marginBottom: 24 }}>
@@ -156,111 +177,139 @@ function TTSContent() {
             </span>
           </div>
 
-          {/* Text input */}
-          <div className="fade-in">
-            <label className="form-label">Enter Text</label>
-            <textarea
-              className="textarea-input"
-              placeholder="यहाँ टेक्स्ट लिखें या पेस्ट करें... Type or paste text in any language!"
-              value={text}
-              onChange={(e) => { setText(e.target.value.substring(0, 5000)); setStatus("idle"); }}
-              style={{ minHeight: 180 }}
-            />
-            <div className="char-count">{text.length} / 5,000 characters</div>
-          </div>
+          {/* Modular Grid Layout */}
+          <div className="teleprompter-grid fade-in" style={{ gridTemplateColumns: "1.2fr 0.8fr", gap: "24px", height: "auto" }}>
+            
+            {/* LEFT COLUMN: Text input & Voice selector */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+              
+              {/* Text Input module */}
+              <div className="glass-card" style={{ padding: "24px" }}>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "12px" }}>📝 Input Script</h3>
+                <textarea
+                  className="textarea-input"
+                  placeholder="यहाँ टेक्स्ट लिखें या पेस्ट करें... Type or paste text in any language!"
+                  value={text}
+                  onChange={(e) => { setText(e.target.value.substring(0, 5000)); setStatus("idle"); }}
+                  style={{ minHeight: "150px", resize: "vertical" }}
+                />
+                <div className="char-count" style={{ marginTop: "8px" }}>{text.length} / 5,000 characters</div>
+              </div>
 
-          {/* Voice selection */}
-          <div className="fade-in" style={{ marginTop: 24 }}>
-            <label className="form-label">🎧 Select Voice ({VOICES.length} Neural Voices Available)</label>
-            <div className="voice-grid">
-              {VOICES.map((v) => (
-                <div
-                  key={v.id}
-                  className={`voice-card ${voice === v.id ? "selected" : ""}`}
-                  onClick={() => setVoice(v.id)}
-                >
-                  <div className="voice-name">{v.name}</div>
-                  <div className="voice-desc">{v.desc}</div>
+              {/* Voice Grid Selection module */}
+              <div className="glass-card" style={{ padding: "24px", display: "flex", flexDirection: "column", flex: 1 }}>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "12px" }}>
+                  🎧 Select Voice ({VOICES.length} Neural Voices Available)
+                </h3>
+                <div className="voice-grid" style={{ overflowY: "auto", maxHeight: "280px", paddingRight: "6px" }}>
+                  {VOICES.map((v) => (
+                    <div
+                      key={v.id}
+                      className={`voice-card ${voice === v.id ? "selected" : ""}`}
+                      onClick={() => setVoice(v.id)}
+                    >
+                      <div className="voice-name">{v.name}</div>
+                      <div className="voice-desc">{v.desc}</div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
+
             </div>
-          </div>
 
-          {/* Speed control */}
-          <div className="fade-in" style={{ marginTop: 16 }}>
-            <div className="speed-control">
-              <span className="speed-label">Speed:</span>
-              <input type="range" className="speed-slider" min="0.5" max="2.0" step="0.1"
-                value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))} />
-              <span className="speed-value">{speed}x</span>
-            </div>
-          </div>
-
-          {/* Selected voice info */}
-          {selectedVoice && (
-            <div className="fade-in" style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <span className="badge badge-info">Voice: {selectedVoice.name}</span>
-              <span className="badge badge-info">Language: {selectedVoice.lang}</span>
-              <span className="badge badge-info">Speed: {speed}x</span>
-            </div>
-          )}
-
-          {/* Generate button */}
-          <button
-            className="btn btn-primary btn-large fade-in"
-            style={{ width: "100%", marginTop: 24 }}
-            onClick={handleGenerate}
-            disabled={!text.trim() || status === "generating"}
-          >
-            {status === "generating" ? (
-              <><span className="spinner"></span> Generating Neural Voice...</>
-            ) : (
-              "🔊 Generate Voice"
-            )}
-          </button>
-
-          {error && (
-            <div className="badge badge-error" style={{ padding: "12px 18px", fontSize: "0.9rem", marginTop: 12 }}>
-              ❌ {error}
-            </div>
-          )}
-
-          {/* Audio player */}
-          {status === "done" && audioUrl && (
-            <div className="fade-in" style={{ marginTop: 24 }}>
-              <div className="glass-card">
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                  <h3>🎵 Generated Audio</h3>
-                  <span className="badge badge-success">✅ Ready to Play</span>
-                </div>
-
-                <audio ref={audioRef} src={audioUrl} crossOrigin="anonymous"
-                  onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime || 0)}
-                  onLoadedMetadata={() => setAudioDuration(audioRef.current?.duration || 0)}
-                  onEnded={() => setIsPlaying(false)} />
-
-                <Waveform audioRef={audioRef} isPlaying={isPlaying} />
-
-                <div className="audio-player">
-                  <button className="play-btn" onClick={togglePlay}>
-                    {isPlaying ? "⏸" : "▶"}
-                  </button>
-                  <div className="audio-info">
-                    <input type="range" className="audio-seek" min="0" max={audioDuration || 0}
-                      step="0.1" value={currentTime} onChange={handleSeek} />
-                    <div className="audio-time">{fmt(currentTime)} / {fmt(audioDuration)}</div>
+            {/* RIGHT COLUMN: Settings, Actions, & Audio Preview */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+              
+              {/* Voice settings module */}
+              <div className="glass-card" style={{ padding: "24px" }}>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "16px" }}>⚙️ Speech Parameters</h3>
+                
+                <div className="form-group" style={{ marginBottom: "20px" }}>
+                  <div className="speed-control">
+                    <span className="speed-label">Speed:</span>
+                    <input type="range" className="speed-slider" min="0.5" max="2.0" step="0.1"
+                      value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))} />
+                    <span className="speed-value">{speed}x</span>
                   </div>
                 </div>
 
-                <div className="action-bar" style={{ marginTop: 12 }}>
-                  <button className="btn btn-primary" onClick={downloadAudio}>📥 Download MP3</button>
-                  <button className="btn btn-ghost" onClick={handleReset}>🔄 Generate New</button>
-                </div>
+                {selectedVoice && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", borderTop: "1px solid var(--border)", paddingTop: "14px" }}>
+                    <div style={{ fontSize: "0.85rem", display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: "var(--text-dim)" }}>Voice Actor:</span>
+                      <span style={{ fontWeight: 600 }}>{selectedVoice.name}</span>
+                    </div>
+                    <div style={{ fontSize: "0.85rem", display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: "var(--text-dim)" }}>Language:</span>
+                      <span style={{ fontWeight: 600 }}>{selectedVoice.lang}</span>
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {/* Action Buttons card */}
+              <div className="glass-card" style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleGenerate}
+                  disabled={!text.trim() || status === "generating"}
+                  style={{ width: "100%" }}
+                >
+                  {status === "generating" ? (
+                    <><span className="spinner"></span> Generating Neural Voice...</>
+                  ) : (
+                    "🔊 Generate Voice"
+                  )}
+                </button>
+
+                <button className="btn btn-ghost btn-sm" style={{ width: "100%" }} onClick={handleReset}>
+                  🔄 Reset Panel
+                </button>
+              </div>
+
+              {error && (
+                <div className="badge badge-error fade-in" style={{ padding: "12px 18px", fontSize: "0.9rem", display: "block" }}>
+                  ❌ {error}
+                </div>
+              )}
+
+              {/* Audio player card */}
+              {status === "done" && audioUrl && (
+                <div className="glass-card fade-in" style={{ padding: "24px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <h3 style={{ fontSize: "1rem", fontWeight: 700 }}>🎵 Audio Playback</h3>
+                    <span className="badge badge-success" style={{ fontSize: "0.68rem" }}>Ready</span>
+                  </div>
+
+                  <audio ref={audioRef} src={audioUrl} crossOrigin="anonymous"
+                    onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime || 0)}
+                    onLoadedMetadata={() => setAudioDuration(audioRef.current?.duration || 0)}
+                    onEnded={() => setIsPlaying(false)} />
+
+                  <Waveform audioRef={audioRef} isPlaying={isPlaying} />
+
+                  <div className="audio-player" style={{ margin: "12px 0 16px 0" }}>
+                    <button className="play-btn" onClick={togglePlay}>
+                      {isPlaying ? "⏸" : "▶"}
+                    </button>
+                    <div className="audio-info">
+                      <input type="range" className="audio-seek" min="0" max={audioDuration || 0}
+                        step="0.1" value={currentTime} onChange={handleSeek} />
+                      <div className="audio-time">{fmt(currentTime)} / {fmt(audioDuration)}</div>
+                    </div>
+                  </div>
+
+                  <button className="btn btn-primary btn-sm" style={{ width: "100%" }} onClick={downloadAudio}>
+                    📥 Download MP3
+                  </button>
+                </div>
+              )}
+
             </div>
-          )}
-        </div>
-      </main>
-    </>
+
+          </div>
+
+      </div>
+    </div>
   );
 }

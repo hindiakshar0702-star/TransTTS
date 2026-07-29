@@ -1,8 +1,7 @@
 "use client";
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import Navbar from "@/components/Navbar";
-import ToolNav from "@/components/ToolNav";
+import Sidebar from "@/components/Sidebar";
 import { useToast } from "@/components/Toast";
 import { usePersistedState, clearPersistedState } from "@/hooks/usePersistedState";
 import { addToHistory } from "@/lib/history";
@@ -17,6 +16,7 @@ export default function TranslatePage() {
 }
 
 function TranslateContent() {
+  const [isAuth, setIsAuth] = useState(false);
   const searchParams = useSearchParams();
   const router = useRouter();
   const { showToast } = useToast();
@@ -28,10 +28,31 @@ function TranslateContent() {
   const [error, setError] = useState("");
   const [engine, setEngine] = usePersistedState("translate_engine", "");
 
+  // Auth Guard
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const loggedIn = localStorage.getItem("isLoggedIn") === "true";
+      if (!loggedIn) {
+        showToast("Please sign in to access this tool.", "error");
+        router.push("/login?redirect=/translate");
+      } else {
+        setIsAuth(true);
+      }
+    }
+  }, [router]);
+
   useEffect(() => {
     const text = searchParams.get("text");
     if (text) { setSourceText(text); setStatus("idle"); }
   }, [searchParams]);
+
+  if (!isAuth) {
+    return (
+      <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", background: "var(--bg)", color: "var(--text)" }}>
+        <div className="spinner" style={{ width: 40, height: 40 }}></div>
+      </div>
+    );
+  }
 
   const handleReset = () => {
     clearPersistedState("translate_");
@@ -115,116 +136,140 @@ function TranslateContent() {
   const langEntries = Object.entries(LANGUAGES).filter(([code]) => code !== "auto");
 
   return (
-    <>
-      <Navbar />
-      <main className="app-page">
-        <div className="container">
-          <div className="app-header fade-in">
-            <h1>🌐 <span className="gradient-text">AI Translation</span></h1>
-            <p>Translate text to Hindi and 25+ languages powered by GPT-4o</p>
-          </div>
-
-          <ToolNav />
-
-          {/* Language selectors */}
-          <div className="fade-in" style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-            <div style={{ flex: 1, minWidth: 150 }}>
-              <label className="form-label">Source Language</label>
-              <select className="select-input" value={sourceLang} onChange={(e) => setSourceLang(e.target.value)}>
-                <option value="auto">🌐 Auto Detect</option>
-                {langEntries.map(([code, lang]) => (
-                  <option key={code} value={code}>{lang.flag} {lang.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <button className="btn btn-ghost" onClick={swapLanguages}
-              style={{ marginTop: 24, fontSize: "1.2rem" }} title="Swap languages">
-              ⇄
-            </button>
-
-            <div style={{ flex: 1, minWidth: 150 }}>
-              <label className="form-label">Target Language</label>
-              <select className="select-input" value={targetLang} onChange={(e) => setTargetLang(e.target.value)}>
-                {langEntries.map(([code, lang]) => (
-                  <option key={code} value={code}>{lang.flag} {lang.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Translation panels */}
-          <div className="translate-grid fade-in">
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                <label className="form-label" style={{ margin: 0 }}>Source Text</label>
-                <button className="btn btn-ghost btn-sm" onClick={() => speakText(sourceText, sourceLang)}
-                  disabled={!sourceText}>🔊 Speak</button>
-              </div>
-              <textarea
-                className="textarea-input"
-                placeholder="Type or paste text to translate..."
-                value={sourceText}
-                onChange={(e) => { setSourceText(e.target.value); setStatus("idle"); }}
-                style={{ minHeight: 250 }}
-              />
-              <div className="char-count">{sourceText.length} / 10,000 characters</div>
-            </div>
-
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                <label className="form-label" style={{ margin: 0 }}>
-                  Translation {engine && <span className="badge badge-info" style={{ marginLeft: 8 }}>{engine}</span>}
-                </label>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button className="btn btn-ghost btn-sm" onClick={() => speakText(translatedText, targetLang)}
-                    disabled={!translatedText}>🔊 Speak</button>
-                  <button className="btn btn-ghost btn-sm" onClick={copyTranslation}
-                    disabled={!translatedText}>📋 Copy</button>
-                </div>
-              </div>
-              <textarea
-                className="textarea-input"
-                placeholder="Translation will appear here..."
-                value={translatedText}
-                readOnly
-                style={{ minHeight: 250, background: "var(--bg-card)" }}
-              />
-            </div>
-          </div>
-
-          {error && (
-            <div className="badge badge-error" style={{ padding: "12px 18px", fontSize: "0.9rem", marginTop: 12 }}>
-              ❌ {error}
-            </div>
-          )}
-
-          <div className="action-bar" style={{ marginTop: 20 }}>
-            <button
-              className="btn btn-primary btn-large"
-              onClick={handleTranslate}
-              disabled={!sourceText.trim() || status === "translating"}
-              style={{ flex: 1, maxWidth: 300 }}
-            >
-              {status === "translating" ? (
-                <><span className="spinner"></span> Translating...</>
-              ) : (
-                "🌐 Translate"
-              )}
-            </button>
-            {translatedText && (
-              <button className="btn btn-outline" onClick={() => {
-                router.push(`/tts?text=${encodeURIComponent(translatedText.substring(0, 500))}`);
-              }}>
-                🔊 Generate Voice from Translation
-              </button>
-            )}
-            <button className="btn btn-ghost" onClick={handleReset}>
-              🔄 Reset
-            </button>
-          </div>
+    <div className="dashboard-layout">
+      <Sidebar active="translate" />
+      <div className="dashboard-content-wrapper">
+        <div className="app-header fade-in" style={{ padding: 0, marginBottom: "32px", textAlign: "left" }}>
+          <h1 style={{ fontSize: "2.4rem", display: "flex", alignItems: "center", gap: "12px" }}>
+            🌐 <span className="gradient-text">AI Translation Board</span>
+          </h1>
+          <p>Translate text to Hindi and 25+ languages in a modular grid</p>
         </div>
-      </main>
-    </>
+
+          {/* Modular Grid Layout */}
+          <div className="teleprompter-grid fade-in" style={{ gridTemplateColumns: "0.7fr 1.3fr", gap: "24px", height: "auto" }}>
+            
+            {/* LEFT COLUMN: Settings & Actions */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+              
+              {/* Language selection card */}
+              <div className="glass-card" style={{ padding: "24px" }}>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "16px" }}>⚙️ Translation Settings</h3>
+                
+                <div className="form-group">
+                  <label className="form-label">Source Language</label>
+                  <select className="select-input" value={sourceLang} onChange={(e) => setSourceLang(e.target.value)}>
+                    <option value="auto">🌐 Auto Detect</option>
+                    {langEntries.map(([code, lang]) => (
+                      <option key={code} value={code}>{lang.flag} {lang.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "center", margin: "8px 0" }}>
+                  <button type="button" className="btn btn-outline btn-sm" onClick={swapLanguages} title="Swap languages">
+                    🔄 Swap Direction
+                  </button>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Target Language</label>
+                  <select className="select-input" value={targetLang} onChange={(e) => setTargetLang(e.target.value)}>
+                    {langEntries.map(([code, lang]) => (
+                      <option key={code} value={code}>{lang.flag} {lang.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+              </div>
+
+              {/* Action Buttons card */}
+              <div className="glass-card" style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleTranslate}
+                  disabled={!sourceText.trim() || status === "translating"}
+                  style={{ width: "100%" }}
+                >
+                  {status === "translating" ? (
+                    <><span className="spinner"></span> Translating...</>
+                  ) : (
+                    "🌐 Translate Now"
+                  )}
+                </button>
+
+                {translatedText && (
+                  <button className="btn btn-outline btn-sm" style={{ width: "100%" }} onClick={() => {
+                    router.push(`/tts?text=${encodeURIComponent(translatedText.substring(0, 500))}`);
+                  }}>
+                    🔊 Generate Voice
+                  </button>
+                )}
+
+                <button className="btn btn-ghost btn-sm" style={{ width: "100%" }} onClick={handleReset}>
+                  🔄 Reset Panel
+                </button>
+              </div>
+
+              {error && (
+                <div className="badge badge-error fade-in" style={{ padding: "12px 18px", fontSize: "0.85rem", display: "block" }}>
+                  ❌ {error}
+                </div>
+              )}
+
+            </div>
+
+            {/* RIGHT COLUMN: Panels Grid */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+              
+              {/* Source Text Panel */}
+              <div className="glass-card" style={{ padding: "24px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                  <h3 style={{ fontSize: "1.1rem", fontWeight: 700 }}>📝 Source Text</h3>
+                  <button className="btn btn-ghost btn-sm" onClick={() => speakText(sourceText, sourceLang)} disabled={!sourceText}>
+                    🔊 Speak
+                  </button>
+                </div>
+                <textarea
+                  className="textarea-input"
+                  placeholder="Type or paste text to translate..."
+                  value={sourceText}
+                  onChange={(e) => { setSourceText(e.target.value); setStatus("idle"); }}
+                  style={{ minHeight: "160px", resize: "vertical" }}
+                />
+                <div className="char-count" style={{ marginTop: "8px" }}>{sourceText.length} / 10,000 characters</div>
+              </div>
+
+              {/* Translation Output Panel */}
+              <div className="glass-card" style={{ padding: "24px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                  <h3 style={{ fontSize: "1.1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "8px" }}>
+                    ✨ Translation Output
+                    {engine && <span className="badge badge-info">{engine}</span>}
+                  </h3>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => speakText(translatedText, targetLang)} disabled={!translatedText}>
+                      🔊 Speak
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={copyTranslation} disabled={!translatedText}>
+                      📋 Copy
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  className="textarea-input"
+                  placeholder="Translation will appear here..."
+                  value={translatedText}
+                  readOnly
+                  style={{ minHeight: "160px", resize: "vertical", background: "rgba(0,0,0,0.15)" }}
+                />
+              </div>
+
+            </div>
+
+          </div>
+
+      </div>
+    </div>
   );
 }

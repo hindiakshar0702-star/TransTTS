@@ -8,13 +8,13 @@ export function ensureDir(dirPath: string): void {
 }
 
 export function getUploadsDir(): string {
-  const dir = path.join(process.cwd(), "uploads");
+  const dir = path.join(/*turbopackIgnore: true*/ process.cwd(), "uploads");
   ensureDir(dir);
   return dir;
 }
 
 export function getGeneratedDir(): string {
-  const dir = path.join(process.cwd(), "generated");
+  const dir = path.join(/*turbopackIgnore: true*/ process.cwd(), "generated");
   ensureDir(dir);
   return dir;
 }

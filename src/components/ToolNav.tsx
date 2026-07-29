@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const tools = [
+  { href: "/record", icon: "🎙️", label: "Voice Recorder", desc: "Record & Promote" },
   { href: "/transcribe", icon: "🎤", label: "Transcribe", desc: "Audio → Text" },
   { href: "/translate", icon: "🌐", label: "Translate", desc: "Any Language" },
   { href: "/tts", icon: "🔊", label: "Voice Generator", desc: "Text → Speech" },

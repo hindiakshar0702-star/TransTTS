@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
+import fs from "fs/promises";
 import path from "path";
 
 export async function GET(
@@ -8,14 +8,26 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const generatedDir = path.join(process.cwd(), "generated");
-    const filePath = path.join(generatedDir, `${id}.mp3`);
 
-    if (!fs.existsSync(filePath)) {
+    // Validate ID pattern to prevent Path Traversal
+    if (!/^[a-zA-Z0-9-]+$/.test(id)) {
+      return NextResponse.json({ error: "Invalid audio ID format" }, { status: 400 });
+    }
+
+    const generatedDir = path.normalize(path.join(process.cwd(), "generated"));
+    const filePath = path.normalize(path.join(generatedDir, `${id}.mp3`));
+
+    // Verify path traversal defense-in-depth
+    if (!filePath.startsWith(generatedDir)) {
+      return NextResponse.json({ error: "Invalid audio ID format" }, { status: 400 });
+    }
+
+    const fileExists = await fs.access(filePath).then(() => true).catch(() => false);
+    if (!fileExists) {
       return NextResponse.json({ error: "Audio not found" }, { status: 404 });
     }
 
-    const fileBuffer = fs.readFileSync(filePath);
+    const fileBuffer = await fs.readFile(filePath);
 
     // Check if download is requested via query param
     const download = req.nextUrl.searchParams.get("download") === "1";

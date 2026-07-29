@@ -50,7 +50,7 @@ export default function ContactPage() {
                 Check your email at <strong>{formData.email}</strong> for confirmation.
               </p>
               <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-                <Link href="/pricing" className="btn btn-outline">← Back to Pricing</Link>
+                <Link href="/pricing" className="btn btn-outline">← Back to Free Plan</Link>
                 <Link href="/transcribe" className="btn btn-primary">🎤 Start Transcribing</Link>
               </div>
             </div>
@@ -150,7 +150,7 @@ export default function ContactPage() {
               </div>
 
               <div style={{ textAlign: "center", marginTop: 24 }}>
-                <Link href="/pricing" className="btn btn-ghost">← Back to Pricing</Link>
+                <Link href="/pricing" className="btn btn-ghost">← Back to Free Plan</Link>
               </div>
             </>
           )}
