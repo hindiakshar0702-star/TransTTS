@@ -26,13 +26,13 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    // Optional Admin Token check
+    // Admin token check — FAIL CLOSED (see /api/jobs DELETE).
     const adminSecret = process.env.ADMIN_SECRET_KEY;
-    if (adminSecret) {
-      const token = req.headers.get("x-admin-token");
-      if (token !== adminSecret) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
+    if (!adminSecret) {
+      return NextResponse.json({ error: "Admin operations are not configured." }, { status: 503 });
+    }
+    if (req.headers.get("x-admin-token") !== adminSecret) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     // Retrieve the job to see if we need to clean up its audio file

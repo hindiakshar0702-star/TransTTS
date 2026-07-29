@@ -19,6 +19,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Text too long. Maximum 10,000 characters." }, { status: 400 });
     }
 
+    // Language codes are concatenated into an outbound URL — restrict them to
+    // ISO-639-style tokens so they cannot inject extra query parameters.
+    const LANG_RE = /^[a-z]{2}(-[A-Za-z]{2,4})?$/;
+    const src = sourceLang === "auto" || !sourceLang ? "en" : String(sourceLang);
+    if (!LANG_RE.test(src) || !LANG_RE.test(String(targetLang))) {
+      return NextResponse.json({ error: "Invalid language code." }, { status: 400 });
+    }
+
     // Create job in DB
     const job = await prisma.job.create({
       data: {
@@ -32,9 +40,8 @@ export async function POST(req: NextRequest) {
     });
     jobId = job.id;
 
-    // Use FREE MyMemory Translation API
-    const src = sourceLang === "auto" ? "en" : sourceLang;
-    const langPair = `${src}|${targetLang}`;
+    // Use FREE MyMemory Translation API (src/targetLang validated above)
+    const langPair = encodeURIComponent(`${src}|${targetLang}`);
 
     const chunks: string[] = [];
     for (let i = 0; i < text.length; i += 4500) {
@@ -77,15 +84,15 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: unknown) {
     console.error("Translation error:", error);
-    const message = error instanceof Error ? error.message : "Translation failed";
+    const raw = error instanceof Error ? error.message : "";
 
     if (jobId) {
       await prisma.job.update({
         where: { id: jobId },
-        data: { status: "error", errorMsg: message },
+        data: { status: "error", errorMsg: raw || "Translation failed" },
       }).catch(() => {});
     }
 
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Translation failed. Please try again." }, { status: 500 });
   }
 }

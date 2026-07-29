@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { exec } from "child_process";
+import { execFile } from "child_process";
+import { guard } from "@/lib/api-guard";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -7,10 +8,21 @@ import os from "os";
 // Disable body parsing size limits if necessary, though default Next.js limits are 4MB
 export const dynamic = "force-dynamic";
 
+// Hard cap on the audio blob we will spawn a Python process for (DoS guard).
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+
 export async function POST(req: NextRequest) {
+  // Spawns an external process — rate limit hard.
+  const blocked = guard(req, "clean-audio", { limit: 10, windowMs: 60_000 });
+  if (blocked) return blocked;
+
   try {
     const formData = await req.formData();
     const file = formData.get("audio") as File;
+
+    if (file && file.size > MAX_AUDIO_BYTES) {
+      return NextResponse.json({ error: "Audio too large. Maximum 25MB." }, { status: 400 });
+    }
 
     if (!file) {
       return NextResponse.json(
@@ -35,19 +47,23 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
     await fs.promises.writeFile(inputPath, buffer);
 
-    // Execute DeepFilterNet enhance command
-    const command = `python -m df.enhance --output-postfix "" -o "${tempDir}" "${inputPath}"`;
-
+    // Execute DeepFilterNet via execFile — arguments are passed as an array, so
+    // there is no shell to interpret metacharacters (no command injection).
     try {
       await new Promise<void>((resolve, reject) => {
-        exec(command, (error, stdout, stderr) => {
-          if (error) {
-            console.error("DeepFilterNet execution error details:", stderr || error.message);
-            reject(new Error(stderr || error.message));
-          } else {
-            resolve();
+        execFile(
+          "python",
+          ["-m", "df.enhance", "--output-postfix", "", "-o", tempDir, inputPath],
+          { timeout: 120_000, maxBuffer: 10 * 1024 * 1024 },
+          (error, stdout, stderr) => {
+            if (error) {
+              console.error("DeepFilterNet execution error details:", stderr || error.message);
+              reject(new Error(stderr || error.message));
+            } else {
+              resolve();
+            }
           }
-        });
+        );
       });
 
       // Verify the cleaned file exists
@@ -78,11 +94,11 @@ export async function POST(req: NextRequest) {
       fs.promises.unlink(inputPath).catch(() => {});
 
       // Fallback: Send the original audio back but set an error header
+      // Do NOT surface `msg` (raw stderr / filesystem paths) to the client.
       return new NextResponse(buffer, {
         headers: {
           "Content-Type": mimeType,
           "X-Noise-Suppressed-Failed": "true",
-          "X-Error-Message": encodeURIComponent(msg),
         },
       });
     }

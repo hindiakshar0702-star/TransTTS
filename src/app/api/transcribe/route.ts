@@ -195,20 +195,22 @@ export async function POST(req: NextRequest) {
     }
   } catch (error: unknown) {
     console.error("Transcription error:", error);
-    let message = error instanceof Error ? error.message : "Transcription failed";
+    const raw = error instanceof Error ? error.message : "";
 
-    if (message.includes("429") || message.includes("quota") || message.includes("billing")) {
-      message = "API quota exceeded. Get a FREE Groq key at console.groq.com";
+    // Only return an allow-listed, non-sensitive message to the client.
+    let clientMessage = "Transcription failed. Please try again.";
+    if (raw.includes("429") || raw.includes("quota") || raw.includes("billing")) {
+      clientMessage = "API quota exceeded. Get a FREE Groq key at console.groq.com";
     }
 
-    // Update job as failed
+    // Update job as failed (full detail stays server-side).
     if (jobId) {
       await prisma.job.update({
         where: { id: jobId },
-        data: { status: "error", errorMsg: message },
+        data: { status: "error", errorMsg: raw || clientMessage },
       }).catch(() => {});
     }
 
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: clientMessage }, { status: 500 });
   }
 }

@@ -115,15 +115,16 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: unknown) {
     console.error("TTS error:", error);
-    const message = error instanceof Error ? error.message : "TTS generation failed";
+    const raw = error instanceof Error ? error.message : "";
 
     if (jobId) {
       await prisma.job.update({
         where: { id: jobId },
-        data: { status: "error", errorMsg: message },
+        data: { status: "error", errorMsg: raw || "TTS generation failed" },
       }).catch(() => {});
     }
 
-    return NextResponse.json({ error: message }, { status: 500 });
+    // Generic message to the client; full detail is logged / stored server-side.
+    return NextResponse.json({ error: "Voice generation failed. Please try again." }, { status: 500 });
   }
 }

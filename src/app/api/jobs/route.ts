@@ -56,13 +56,15 @@ export async function GET(req: NextRequest) {
 // DELETE /api/jobs — Clear all jobs
 export async function DELETE(req: NextRequest) {
   try {
-    // Optional Admin Token check
+    // Admin token check — FAIL CLOSED. If no secret is configured, this
+    // destructive endpoint (wipes every job + deletes files) stays disabled
+    // rather than being open to the public.
     const adminSecret = process.env.ADMIN_SECRET_KEY;
-    if (adminSecret) {
-      const token = req.headers.get("x-admin-token");
-      if (token !== adminSecret) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
+    if (!adminSecret) {
+      return NextResponse.json({ error: "Admin operations are not configured." }, { status: 503 });
+    }
+    if (req.headers.get("x-admin-token") !== adminSecret) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     // Clean up physical audio files from the generated directory
