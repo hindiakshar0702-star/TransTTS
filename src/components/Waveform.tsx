@@ -6,6 +6,21 @@ interface WaveformProps {
   isPlaying: boolean;
 }
 
+// A given HTMLMediaElement can be bound to exactly ONE MediaElementSourceNode
+// for its entire lifetime — calling createMediaElementSource on it twice throws
+// InvalidStateError, even after the AudioContext is closed. React 19 Strict Mode
+// double-invokes effects in dev, and TTS remounts this component per generation,
+// so we cache the audio graph per element and reuse it instead of rebuilding.
+interface AudioGraph {
+  ctx: AudioContext;
+  analyser: AnalyserNode;
+  source: MediaElementAudioSourceNode;
+}
+const graphCache = new WeakMap<HTMLMediaElement, AudioGraph>();
+// Only one Waveform is on screen at a time; track the previous context so we can
+// close it when a new element appears, instead of leaking one per generation.
+let previousCtx: AudioContext | null = null;
+
 export default function Waveform({ audioRef, isPlaying }: WaveformProps) {
   const [bars, setBars] = useState<number[]>(Array(32).fill(4));
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -14,34 +29,34 @@ export default function Waveform({ audioRef, isPlaying }: WaveformProps) {
   const ctxRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
-    if (!audioRef.current) return;
+    const el = audioRef.current;
+    if (!el) return;
 
-    // Create audio context only once
-    if (!ctxRef.current) {
+    let graph = graphCache.get(el);
+    if (!graph) {
+      // New audio element — close the prior generation's context first.
+      if (previousCtx && previousCtx.state !== "closed") {
+        previousCtx.close().catch(() => {});
+      }
       const ctx = new AudioContext();
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 64;
-      const source = ctx.createMediaElementSource(audioRef.current);
+      const source = ctx.createMediaElementSource(el); // safe: once per element
       source.connect(analyser);
       analyser.connect(ctx.destination);
-      ctxRef.current = ctx;
-      analyserRef.current = analyser;
-      sourceRef.current = source;
+      graph = { ctx, analyser, source };
+      graphCache.set(el, graph);
+      previousCtx = ctx;
     }
 
-    // Close the AudioContext on unmount. Without this, each TTS generation
-    // remounts Waveform and leaks a context; browsers cap concurrent contexts
-    // (~6), after which `new AudioContext()` throws and audio/waveform break.
+    ctxRef.current = graph.ctx;
+    analyserRef.current = graph.analyser;
+    sourceRef.current = graph.source;
+
+    // Do NOT close/disconnect on unmount: the graph is cached and reused, and
+    // the element stays permanently bound to its source node. Just stop drawing.
     return () => {
       cancelAnimationFrame(animRef.current);
-      try { sourceRef.current?.disconnect(); } catch {}
-      try { analyserRef.current?.disconnect(); } catch {}
-      if (ctxRef.current && ctxRef.current.state !== "closed") {
-        ctxRef.current.close().catch(() => {});
-      }
-      ctxRef.current = null;
-      analyserRef.current = null;
-      sourceRef.current = null;
     };
   }, [audioRef]);
 

@@ -55,10 +55,23 @@ export async function POST(req: NextRequest) {
       const res = await fetch(url);
       const data = await res.json();
 
-      if (data.responseStatus === 200) {
+      // MyMemory returns responseStatus as a number OR a string.
+      if (Number(data.responseStatus) === 200 && data.responseData?.translatedText) {
         translatedChunks.push(data.responseData.translatedText);
       } else {
-        throw new Error(data.responseDetails || "Translation service error");
+        // Upstream (MyMemory) reasons — e.g. free-tier quota exhausted — are
+        // safe and useful to show the user, unlike internal errors.
+        const detail = typeof data.responseDetails === "string" && data.responseDetails
+          ? data.responseDetails
+          : "the translation service is temporarily unavailable";
+        await prisma.job.update({
+          where: { id: jobId },
+          data: { status: "error", errorMsg: detail },
+        }).catch(() => {});
+        return NextResponse.json(
+          { error: `Translation failed: ${detail}` },
+          { status: 502 }
+        );
       }
     }
 

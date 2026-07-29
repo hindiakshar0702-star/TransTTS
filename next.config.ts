@@ -9,8 +9,10 @@ import type { NextConfig } from "next";
 // does (React never uses eval in prod). So allow 'unsafe-eval' in development
 // only and keep the production policy strict.
 const isDev = process.env.NODE_ENV !== "production";
+// @vercel/analytics loads its script from va.vercel-scripts.com and beacons to
+// va.vercel-scripts.com (dev) / same-origin (prod), so it must be allow-listed.
 const scriptSrc = [
-  "script-src 'self' 'unsafe-inline' https://alwingulla.com",
+  "script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com https://alwingulla.com",
   isDev ? " 'unsafe-eval'" : "",
 ].join("");
 
@@ -25,7 +27,7 @@ const csp = [
   "font-src 'self' data:",
   "style-src 'self' 'unsafe-inline'",
   scriptSrc,
-  "connect-src 'self' https://alwingulla.com",
+  "connect-src 'self' https://va.vercel-scripts.com https://vitals.vercel-insights.com https://alwingulla.com",
   "worker-src 'self' blob:",
   "upgrade-insecure-requests",
 ].join("; ");
