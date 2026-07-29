@@ -28,6 +28,21 @@ export default function Waveform({ audioRef, isPlaying }: WaveformProps) {
       analyserRef.current = analyser;
       sourceRef.current = source;
     }
+
+    // Close the AudioContext on unmount. Without this, each TTS generation
+    // remounts Waveform and leaks a context; browsers cap concurrent contexts
+    // (~6), after which `new AudioContext()` throws and audio/waveform break.
+    return () => {
+      cancelAnimationFrame(animRef.current);
+      try { sourceRef.current?.disconnect(); } catch {}
+      try { analyserRef.current?.disconnect(); } catch {}
+      if (ctxRef.current && ctxRef.current.state !== "closed") {
+        ctxRef.current.close().catch(() => {});
+      }
+      ctxRef.current = null;
+      analyserRef.current = null;
+      sourceRef.current = null;
+    };
   }, [audioRef]);
 
   useEffect(() => {
@@ -35,6 +50,12 @@ export default function Waveform({ audioRef, isPlaying }: WaveformProps) {
       cancelAnimationFrame(animRef.current);
       setBars(Array(32).fill(4));
       return;
+    }
+
+    // Routing <audio> through a MediaElementSource mutes output while the
+    // AudioContext is suspended (Chrome autoplay policy). Resume on play.
+    if (ctxRef.current?.state === "suspended") {
+      ctxRef.current.resume().catch(() => {});
     }
 
     const analyser = analyserRef.current;

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import fs from "fs/promises";
+import path from "path";
 
 // GET /api/jobs/[id] — Get single job
 export async function GET(
@@ -23,9 +25,42 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+
+    // Optional Admin Token check
+    const adminSecret = process.env.ADMIN_SECRET_KEY;
+    if (adminSecret) {
+      const token = req.headers.get("x-admin-token");
+      if (token !== adminSecret) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+    }
+
+    // Retrieve the job to see if we need to clean up its audio file
+    const job = await prisma.job.findUnique({ where: { id } });
+    if (job && job.type === "tts" && job.audioUrl) {
+      const fileId = job.audioUrl.split("/").pop();
+      if (fileId && /^[a-zA-Z0-9-]+$/.test(fileId)) {
+        const generatedDir = path.normalize(path.join(process.cwd(), "generated"));
+        const filePath = path.normalize(path.join(generatedDir, `${fileId}.mp3`));
+        
+        // Verify path traversal defense-in-depth
+        if (filePath.startsWith(generatedDir)) {
+          // Safely try unlinking the file
+          try {
+            await fs.unlink(filePath);
+          } catch (err: unknown) {
+            if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+              console.error(`Failed to delete orphaned audio file at ${filePath}:`, err);
+            }
+          }
+        }
+      }
+    }
+
     await prisma.job.delete({ where: { id } });
     return NextResponse.json({ message: "Job deleted" });
-  } catch {
+  } catch (error) {
+    console.error("Delete job error:", error);
     return NextResponse.json({ error: "Failed to delete job" }, { status: 500 });
   }
 }

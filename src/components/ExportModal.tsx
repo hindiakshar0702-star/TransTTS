@@ -38,8 +38,6 @@ export default function ExportModal({ isOpen, onClose, transcript, segments, fil
 
   if (!isOpen) return null;
 
-  const baseName = fileName?.replace(/\.[^.]+$/, "") || `transcript-${Date.now()}`;
-
   const generateContent = (format: string): string => {
     switch (format) {
       case "txt":
@@ -77,6 +75,7 @@ export default function ExportModal({ isOpen, onClose, transcript, segments, fil
   };
 
   const handleDownload = () => {
+    const baseName = fileName?.replace(/\.[^.]+$/, "") || `transcript-${Date.now()}`;
     const fmt = FORMATS.find((f) => f.id === selected)!;
     const content = generateContent(selected);
     const mimeType = selected === "json" ? "application/json" : "text/plain";

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import { useToast } from "@/components/Toast";
@@ -9,23 +9,22 @@ import { usePersistedState, clearPersistedState } from "@/hooks/usePersistedStat
 import { addToHistory } from "@/lib/history";
 import { LANGUAGES, formatDuration, formatFileSize } from "@/lib/utils";
 import type { TranscriptSegment } from "@/types";
+import VoiceRecorderTeleprompter from "@/components/VoiceRecorderTeleprompter";
 
-export default function TranscribePage() {
+export default function RecordPage() {
   const [isAuth, setIsAuth] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const [language, setLanguage] = usePersistedState("transcribe_lang", "auto");
-  const [status, setStatus] = usePersistedState<"idle" | "uploading" | "done" | "error">("transcribe_status", "idle");
+  const [language, setLanguage] = usePersistedState("record_lang", "auto");
+  const [status, setStatus] = usePersistedState<"idle" | "uploading" | "done" | "error">("record_status", "idle");
   const [progress, setProgress] = useState(0);
-  const [transcript, setTranscript] = usePersistedState("transcribe_text", "");
-  const [segments, setSegments] = usePersistedState<TranscriptSegment[]>("transcribe_segments", []);
-  const [detectedLang, setDetectedLang] = usePersistedState("transcribe_detected", "");
-  const [duration, setDuration] = usePersistedState("transcribe_duration", 0);
+  const [transcript, setTranscript] = usePersistedState("record_text", "");
+  const [segments, setSegments] = usePersistedState<TranscriptSegment[]>("record_segments", []);
+  const [detectedLang, setDetectedLang] = usePersistedState("record_detected", "");
+  const [duration, setDuration] = usePersistedState("record_duration", 0);
   const [error, setError] = useState("");
-  const [dragOver, setDragOver] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [originalTranscript, setOriginalTranscript] = useState("");
   const [showExport, setShowExport] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const { showToast } = useToast();
 
@@ -35,7 +34,7 @@ export default function TranscribePage() {
       const loggedIn = localStorage.getItem("isLoggedIn") === "true";
       if (!loggedIn) {
         showToast("Please sign in to access this tool.", "error");
-        router.push("/login?redirect=/transcribe");
+        router.push("/login?redirect=/record");
       } else {
         setIsAuth(true);
       }
@@ -43,29 +42,11 @@ export default function TranscribePage() {
   }, [router]);
 
   const handleReset = () => {
-    clearPersistedState("transcribe_");
+    clearPersistedState("record_");
     setFile(null); setLanguage("auto"); setStatus("idle");
     setProgress(0); setTranscript(""); setSegments([]);
     setDetectedLang(""); setDuration(0); setError("");
   };
-
-  const handleFile = (f: File) => {
-    if (f.size > 25 * 1024 * 1024) {
-      setError("File too large. Maximum 25MB for Whisper API.");
-      return;
-    }
-    setFile(f);
-    setError("");
-    setTranscript("");
-    setSegments([]);
-  };
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const f = e.dataTransfer.files[0];
-    if (f) handleFile(f);
-  }, []);
 
   const handleTranscribe = async () => {
     if (!file) return;
@@ -114,7 +95,7 @@ export default function TranscribePage() {
 
       addToHistory({
         type: "transcribe",
-        title: file?.name || "Audio Transcription",
+        title: file?.name || "Voice Recording Transcription",
         status: "completed",
         data: {
           fileName: file?.name,
@@ -141,42 +122,6 @@ export default function TranscribePage() {
     showToast("Transcript copied!", "success");
   };
 
-  const downloadTxt = () => {
-    const blob = new Blob([transcript], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `transcript-${Date.now()}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const downloadSrt = () => {
-    const srt = segments
-      .map((seg, i) => {
-        const start = formatSrtTime(seg.start);
-        const end = formatSrtTime(seg.end);
-        return `${i + 1}\n${start} --> ${end}\n${seg.text}\n`;
-      })
-      .join("\n");
-    const blob = new Blob([srt], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `subtitles-${Date.now()}.srt`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const formatSrtTime = (s: number) => {
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const sec = Math.floor(s % 60);
-    const ms = Math.floor((s % 1) * 1000);
-    return `${pad(h)}:${pad(m)}:${pad(sec)},${ms.toString().padStart(3, "0")}`;
-  };
-  const pad = (n: number) => n.toString().padStart(2, "0");
-
   if (!isAuth) {
     return (
       <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", background: "var(--bg)", color: "var(--text)" }}>
@@ -187,99 +132,103 @@ export default function TranscribePage() {
 
   return (
     <div className="dashboard-layout">
-      <Sidebar active="transcribe" />
+      <Sidebar active="record" />
       <div className="dashboard-content-wrapper">
         <div className="app-header fade-in" style={{ padding: 0, marginBottom: "32px", textAlign: "left" }}>
           <h1 style={{ fontSize: "2.4rem", display: "flex", alignItems: "center", gap: "12px" }}>
-            🎤 <span className="gradient-text">Audio Transcription</span>
+            🎙️ <span className="gradient-text">Voice Recorder & Teleprompter</span>
           </h1>
-          <p>Upload audio or video — Whisper AI converts it to text with timestamps</p>
+          <p>Record your script with live active noise cancellation and transcribe it instantly</p>
         </div>
 
-          {/* UPLOAD ZONE */}
-          {status === "idle" || status === "error" ? (
-            <div className="fade-in">
-              <div
-                className={`dropzone ${dragOver ? "dragover" : ""}`}
-                onClick={() => fileRef.current?.click()}
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={handleDrop}
-              >
-                <div className="dropzone-icon">📂</div>
-                <div className="dropzone-text">Drag &amp; drop your audio or video file</div>
-                <div className="dropzone-hint">
-                  MP3, WAV, MP4, MKV, FLAC, OGG, WebM • Max 25 MB
-                </div>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="audio/*,video/*"
-                  onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
-                />
-              </div>
+          {/* RECORDER SECTION */}
+          {status === "idle" && !file && (
+            <VoiceRecorderTeleprompter
+              onSave={(recordedFile) => {
+                setFile(recordedFile);
+              }}
+              onCancel={() => {
+                setFile(null);
+              }}
+            />
+          )}
 
-              {file && (
-                <div className="file-preview fade-in">
-                  <div className="file-preview-info">
-                    <span className="file-preview-icon">
-                      {file.type.startsWith("video") ? "🎬" : "🎵"}
-                    </span>
-                    <div>
-                      <div className="file-preview-name">{file.name}</div>
-                      <div className="file-preview-size">{formatFileSize(file.size)}</div>
-                    </div>
+          {/* CONFIRMATION / CHOOSE LANGUAGE CARD BEFORE TRANSCRIBING */}
+          {status === "idle" && file && (
+            <div className="fade-in">
+              <div className="glass-card" style={{ maxWidth: "600px", margin: "0 auto", padding: 32 }}>
+                <div style={{ fontSize: "2.5rem", marginBottom: 16, textAlign: "center" }}>🎙️</div>
+                <h3 style={{ textAlign: "center", marginBottom: 8 }}>Voice Recording Ready!</h3>
+                <p style={{ color: "var(--text-dim)", textAlign: "center", fontSize: "0.9rem", marginBottom: 24 }}>
+                  Successfully captured audio: <strong>{file.name}</strong> ({formatFileSize(file.size)})
+                </p>
+
+                <div className="form-group">
+                  <label className="form-label">Select Audio Language</label>
+                  <select className="select-input" value={language} onChange={(e) => setLanguage(e.target.value)}>
+                    {Object.entries(LANGUAGES).map(([code, lang]) => (
+                      <option key={code} value={code}>
+                        {lang.flag} {lang.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="form-hint">Choose the language spoken in the audio for higher Whisper precision</div>
+                </div>
+
+                {error && (
+                  <div className="badge badge-error" style={{ padding: "12px 18px", fontSize: "0.9rem", marginTop: 12, width: "100%", justifyContent: "center" }}>
+                    ❌ {error}
                   </div>
-                  <button className="btn btn-danger btn-sm" onClick={() => { setFile(null); setError(""); }}>
-                    ✕ Remove
+                )}
+
+                <div style={{ display: "flex", gap: 12, marginTop: 24 }}>
+                  <button className="btn btn-outline" style={{ flex: 1 }} onClick={handleReset}>
+                    🔄 Record Again
+                  </button>
+                  <button className="btn btn-primary" style={{ flex: 1.5 }} onClick={handleTranscribe}>
+                    ✨ Start AI Transcription
                   </button>
                 </div>
-              )}
-
-              <div className="form-group" style={{ marginTop: 20 }}>
-                <label className="form-label">Language</label>
-                <select className="select-input" value={language} onChange={(e) => setLanguage(e.target.value)}>
-                  {Object.entries(LANGUAGES).map(([code, lang]) => (
-                    <option key={code} value={code}>
-                      {lang.flag} {lang.name}
-                    </option>
-                  ))}
-                </select>
-                <div className="form-hint">Auto Detect works best for most files</div>
               </div>
-
-              {error && (
-                <div className="badge badge-error" style={{ padding: "12px 18px", fontSize: "0.9rem", marginTop: 12 }}>
-                  ❌ {error}
-                </div>
-              )}
-
-              <button
-                className="btn btn-primary btn-large"
-                style={{ width: "100%", marginTop: 16 }}
-                onClick={handleTranscribe}
-                disabled={!file}
-              >
-                🚀 Start Transcription
-              </button>
             </div>
-          ) : null}
+          )}
 
-          {/* PROGRESS */}
+          {/* ERROR RETRY VIEW */}
+          {status === "error" && (
+            <div className="fade-in">
+              <div className="glass-card" style={{ maxWidth: "600px", margin: "0 auto", textAlign: "center", padding: 32 }}>
+                <div style={{ fontSize: "2.5rem", marginBottom: 16 }}>⚠️</div>
+                <h3 style={{ marginBottom: 8 }}>Transcription Failed</h3>
+                <p style={{ color: "var(--error)", fontSize: "0.9rem", marginBottom: 24 }}>
+                  {error || "An unexpected error occurred during processing."}
+                </p>
+                <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+                  <button className="btn btn-outline" onClick={handleReset}>
+                    Discard &amp; Restart
+                  </button>
+                  <button className="btn btn-primary" onClick={handleTranscribe}>
+                    🔄 Retry Transcription
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* PROGRESS VIEW */}
           {status === "uploading" && (
             <div className="fade-in" style={{ marginTop: 24 }}>
               <div className="glass-card" style={{ textAlign: "center", padding: 40 }}>
                 <div className="spinner" style={{ margin: "0 auto 16px", width: 32, height: 32 }}></div>
-                <h3 style={{ marginBottom: 8 }}>Transcribing with Whisper AI...</h3>
+                <h3 style={{ marginBottom: 8 }}>Transcribing Recording with Whisper AI...</h3>
                 <p style={{ color: "var(--text-dim)", marginBottom: 20 }}>
-                  This may take 30-60 seconds depending on file length
+                  This may take 15-40 seconds depending on speech duration
                 </p>
                 <ProgressTracker progress={progress} status={status} />
               </div>
             </div>
           )}
 
-          {/* RESULTS */}
+          {/* RESULTS VIEW */}
           {status === "done" && (
             <div className="fade-in">
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
@@ -352,7 +301,7 @@ export default function TranscribePage() {
                 <button className="btn btn-outline" onClick={() => {
                   router.push(`/tts?text=${encodeURIComponent(transcript.substring(0, 500))}`);
                 }}>🔊 Generate Voice</button>
-                <button className="btn btn-ghost" onClick={handleReset}>🔄 New Transcription</button>
+                <button className="btn btn-ghost" onClick={handleReset}>🔄 New Recording</button>
               </div>
 
               <ExportModal

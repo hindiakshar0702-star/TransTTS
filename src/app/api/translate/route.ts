@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { guard } from "@/lib/api-guard";
 
 export async function POST(req: NextRequest) {
+  let jobId: string | null = null;
+
+  const blocked = guard(req, "translate", { limit: 30, windowMs: 60_000 });
+  if (blocked) return blocked;
+
   try {
     const { text, sourceLang, targetLang } = await req.json();
 
@@ -24,6 +30,7 @@ export async function POST(req: NextRequest) {
         targetLang,
       },
     });
+    jobId = job.id;
 
     // Use FREE MyMemory Translation API
     const src = sourceLang === "auto" ? "en" : sourceLang;
@@ -52,7 +59,7 @@ export async function POST(req: NextRequest) {
 
     // Save to DB
     await prisma.job.update({
-      where: { id: job.id },
+      where: { id: jobId },
       data: {
         status: "completed",
         progress: 100,
@@ -71,6 +78,14 @@ export async function POST(req: NextRequest) {
   } catch (error: unknown) {
     console.error("Translation error:", error);
     const message = error instanceof Error ? error.message : "Translation failed";
+
+    if (jobId) {
+      await prisma.job.update({
+        where: { id: jobId },
+        data: { status: "error", errorMsg: message },
+      }).catch(() => {});
+    }
+
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
