@@ -7,8 +7,10 @@ import path from "path";
 export async function GET(req: NextRequest) {
   try {
     const type = req.nextUrl.searchParams.get("type");
-    const page = parseInt(req.nextUrl.searchParams.get("page") || "1");
-    const limit = parseInt(req.nextUrl.searchParams.get("limit") || "50");
+    // Clamp pagination — reject NaN/negative/huge values so a crafted
+    // ?limit=999999999 cannot dump the whole table or exhaust memory.
+    const page = Math.max(1, parseInt(req.nextUrl.searchParams.get("page") || "1") || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.nextUrl.searchParams.get("limit") || "50") || 50));
 
     const where = type ? { type } : {};
 

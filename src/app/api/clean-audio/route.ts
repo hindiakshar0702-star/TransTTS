@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { guard } from "@/lib/api-guard";
+import { randomUUID } from "crypto";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -35,10 +36,12 @@ export async function POST(req: NextRequest) {
     const mimeType = file.type || "audio/webm";
     const extension = mimeType.includes("webm") ? ".webm" : mimeType.includes("wav") ? ".wav" : ".ogg";
 
+    // Unguessable, collision-free temp basename (avoids Date.now() races and
+    // symlink pre-creation in the shared tmp dir — per CLAUDE.md temp-file rule).
     const tempDir = os.tmpdir();
-    const timestamp = Date.now();
-    const inputFilename = `input-${timestamp}${extension}`;
-    const outputFilename = `input-${timestamp}.wav`; // python -m df.enhance saves as .wav with empty postfix
+    const uid = randomUUID();
+    const inputFilename = `input-${uid}${extension}`;
+    const outputFilename = `input-${uid}.wav`; // python -m df.enhance saves as .wav with empty postfix
 
     const inputPath = path.join(tempDir, inputFilename);
     const outputPath = path.join(tempDir, outputFilename);
@@ -104,8 +107,9 @@ export async function POST(req: NextRequest) {
     }
 
   } catch (err: unknown) {
+    // Full detail stays server-side; client gets a generic message so raw
+    // filesystem paths / stack details are never leaked (CLAUDE.md error rule).
     console.error("Error in clean-audio API route:", err);
-    const msg = err instanceof Error ? err.message : "Internal Server Error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: "Audio cleaning failed. Please try again." }, { status: 500 });
   }
 }
