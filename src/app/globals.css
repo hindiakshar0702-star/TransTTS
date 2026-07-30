@@ -22,7 +22,7 @@ next-route-announcer {
   --border2: #d8d8d0;
   --text: #1a1a1a;
   --text-dim: #6b6b6b;
-  --text-muted: #999999;
+  --text-muted: #757575; /* 4.6:1 on white — WCAG AA (was #999, 2.85:1, failed) */
   --accent: #FF8000;
   --accent2: #FF9933;
   --accent-hover: #E67300;
