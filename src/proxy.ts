@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySession, SESSION_COOKIE } from "@/lib/jwt";
 
 /**
- * Route gate. Any request to a protected path without a valid session JWT is
- * redirected to /login?redirect=<path>. Runs on the Edge runtime, so it imports
- * only `@/lib/jwt` (jose / Web-Crypto) — never `@/lib/auth` (node scrypt/prisma).
+ * Route gate (Next 16 `proxy` convention, formerly `middleware`). Any request
+ * to a protected path without a valid session JWT is redirected to
+ * /login?redirect=<path>. Runs on the Edge runtime, so it imports only
+ * `@/lib/jwt` (jose / Web-Crypto) — never `@/lib/auth` (node scrypt/prisma).
  * This is the real server-side protection; client checks are cosmetic.
  */
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;
