@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/Toast";
 import Sidebar from "@/components/Sidebar";
@@ -40,15 +40,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const { showToast } = useToast();
 
-  // Load user data on mount
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setIsAuth(true);
-      fetchJobs();
-    }
-  }, [filter]);
-
-  const fetchJobs = async () => {
+  const fetchJobs = useCallback(async () => {
     try {
       const typeParam = filter === "all" ? "" : `?type=${filter}`;
       const res = await fetch(`/api/jobs${typeParam}`);
@@ -59,7 +51,15 @@ export default function DashboardPage() {
       setStats(data.stats || { total: 0, transcriptions: 0, translations: 0, ttsGenerations: 0, totalMinutes: 0 });
     } catch { /* ignore */ }
     setLoading(false);
-  };
+  }, [filter]);
+
+  // Load user data on mount + refetch when the filter (and thus fetchJobs) changes
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setIsAuth(true);
+      fetchJobs();
+    }
+  }, [fetchJobs]);
 
   const handleDelete = async (id: string) => {
     try {
