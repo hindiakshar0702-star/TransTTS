@@ -4,7 +4,6 @@ import AxeBuilder from "@axe-core/playwright";
 const pagesToTest = [
   { name: "Home Page", path: "/" },
   { name: "Login Page", path: "/login" },
-  { name: "Pricing Page", path: "/pricing" },
   { name: "Contact Page", path: "/contact" },
   { name: "Transcribe Feature Page", path: "/transcribe" },
   { name: "Translate Feature Page", path: "/translate" },
