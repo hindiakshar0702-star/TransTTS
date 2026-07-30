@@ -192,7 +192,7 @@ export function CountrySvgFlag({ code, size = 28 }: { code: string; size?: numbe
   }
 }
 
-export function FlagImage({ flagCode, name, size = 20 }: { flagCode?: string; name: string; size?: number }) {
+export function FlagImage({ flagCode, size = 20 }: { flagCode?: string; name?: string; size?: number }) {
   if (!flagCode || flagCode === "un") {
     return (
       <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: size, height: Math.round(size * 0.7) }}>

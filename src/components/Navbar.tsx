@@ -1,16 +1,18 @@
 "use client";
+
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useToast } from "@/components/Toast";
+import { RadioIcon, MicIcon, GlobeIcon, VolumeIcon, ArrowUpRightIcon } from "@/components/landing/Icons";
+
+import Logo from "@/components/Logo";
 
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { showToast } = useToast();
   
-  const isApp = pathname !== "/";
-  const [menuOpen, setMenuOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
@@ -30,86 +32,49 @@ export default function Navbar() {
     }
   };
 
-  const appLinks = [
-    { href: "/record", icon: "🎙️", label: "Voice Recorder" },
-    { href: "/transcribe", icon: "🎤", label: "Transcribe" },
-    { href: "/translate", icon: "🌐", label: "Translate" },
-    { href: "/tts", icon: "🔊", label: "Voice Generator" },
+  const navItems = [
+    { label: "Recorder", href: "/record", icon: <RadioIcon size={14} color="#1a1a1a" /> },
+    { label: "Transcribe", href: "/transcribe", icon: <MicIcon size={14} color="#1a1a1a" /> },
+    { label: "Translate", href: "/translate", icon: <GlobeIcon size={14} color="#1a1a1a" /> },
+    { label: "Voice Generator", href: "/tts", icon: <VolumeIcon size={14} color="#1a1a1a" /> },
   ];
 
   return (
-    <nav className="navbar">
-      <div className="nav-inner">
-        <Link href="/" className="logo">
-          <div className="logo-icon">🎙️</div>
-          TransTTS<span style={{ color: "var(--accent)" }}>AI</span>
-        </Link>
+    <nav className="landing-nav">
+      <div className="landing-nav-inner">
+        {/* Logo */}
+        <Logo height={28} variant="light" href="/" />
 
-        {/* Desktop nav */}
-        <ul className="nav-links">
-          {isApp ? (
-            appLinks.map((l) => (
-              <li key={l.href}>
-                <Link href={l.href} className={`nav-link ${pathname === l.href ? "active" : ""}`}>
-                  {l.icon} {l.label}
-                </Link>
-              </li>
-            ))
-          ) : (
-            <>
-              <li><a href="#features">Features</a></li>
-              <li><a href="#how-it-works">How It Works</a></li>
-              <li><Link href="/pricing">Free Plan</Link></li>
-            </>
-          )}
+        {/* Navigation Links with Glossy Pill & Vector Lucide Icon Badges */}
+        <ul className="landing-nav-links">
+          {navItems.map((item) => (
+            <li key={item.label}>
+              <Link href={item.href} className={`nav-capsule ${pathname === item.href ? "active" : ""}`}>
+                <span className="nav-icon-badge">{item.icon}</span>
+                <span className="nav-label">{item.label}</span>
+              </Link>
+            </li>
+          ))}
         </ul>
 
-        <div className="nav-actions" style={{ gap: "12px" }}>
+        {/* Right Action Group: Sign Out or Saffron CTA Pill */}
+        <div>
           {isLoggedIn ? (
-            <>
-              <button onClick={handleSignOut} className="btn btn-danger btn-sm">Sign Out</button>
-            </>
-          ) : (
-            <>
-              <Link href="/login" className="btn btn-ghost btn-sm">Sign In</Link>
-              <Link href="/transcribe" className="btn btn-primary btn-sm">🚀 Start Free</Link>
-            </>
-          )}
-
-          {/* Hamburger button (mobile only) */}
-          {isApp && (
-            <button className="hamburger" onClick={() => setMenuOpen(!menuOpen)} aria-label="Menu">
-              <span className={`hamburger-line ${menuOpen ? "open" : ""}`} />
-              <span className={`hamburger-line ${menuOpen ? "open" : ""}`} />
-              <span className={`hamburger-line ${menuOpen ? "open" : ""}`} />
+            <button onClick={handleSignOut} className="btn btn-danger btn-sm">
+              Sign Out
             </button>
+          ) : (
+            <div className="landing-nav-cta-group">
+              <Link href="/transcribe" className="landing-nav-cta">
+                Start Free
+              </Link>
+              <Link href="/transcribe" className="landing-nav-arrow-btn" aria-label="Open TransTTS">
+                <ArrowUpRightIcon size={18} color="#ffffff" />
+              </Link>
+            </div>
           )}
         </div>
       </div>
-
-      {/* Mobile menu */}
-      {menuOpen && (
-        <>
-          <div className="mobile-overlay" onClick={() => setMenuOpen(false)} />
-          <div className="mobile-menu">
-            {appLinks.map((l) => (
-              <Link
-                key={l.href}
-                href={l.href}
-                className={`mobile-menu-item ${pathname === l.href ? "active" : ""}`}
-                onClick={() => setMenuOpen(false)}
-              >
-                <span style={{ fontSize: "1.3rem" }}>{l.icon}</span>
-                {l.label}
-              </Link>
-            ))}
-            <div style={{ borderTop: "1px solid var(--border)", margin: "8px 0" }} />
-            <Link href="/" className="mobile-menu-item" onClick={() => setMenuOpen(false)}>
-              ← Home
-            </Link>
-          </div>
-        </>
-      )}
     </nav>
   );
 }

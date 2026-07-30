@@ -2,18 +2,48 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
+import LanguageSelect, { FlagImage } from "@/components/LanguageSelect";
 import { useToast } from "@/components/Toast";
 import { usePersistedState, clearPersistedState } from "@/hooks/usePersistedState";
 import { addToHistory } from "@/lib/history";
-import { LANGUAGES } from "@/lib/utils";
+import {
+  GlobeIcon,
+  VolumeIcon,
+  SparklesIcon,
+  FileTextIcon,
+  RefreshIcon,
+  RepeatIcon,
+  AlertCircleIcon,
+  CopyIcon,
+  TrashIcon,
+  ArrowRightIcon,
+  CheckCircleIcon
+} from "@/components/Icons";
 
 export default function TranslatePage() {
   return (
-    <Suspense fallback={<div style={{minHeight:"100vh",background:"var(--bg)"}} />}>
+    <Suspense fallback={<div style={{ minHeight: "100vh", background: "var(--bg)" }} />}>
       <TranslateContent />
     </Suspense>
   );
 }
+
+const QUICK_SOURCE_PILLS = [
+  { code: "auto", label: "Auto Detect", flagCode: "un" },
+  { code: "en", label: "English", flagCode: "us" },
+  { code: "hi", label: "Hindi", flagCode: "in" },
+  { code: "es", label: "Spanish", flagCode: "es" },
+  { code: "fr", label: "French", flagCode: "fr" },
+];
+
+const QUICK_TARGET_PILLS = [
+  { code: "hi", label: "Hindi", flagCode: "in" },
+  { code: "en", label: "English", flagCode: "us" },
+  { code: "mr", label: "Marathi", flagCode: "in" },
+  { code: "bn", label: "Bengali", flagCode: "bd" },
+  { code: "gu", label: "Gujarati", flagCode: "in" },
+];
+
 
 function TranslateContent() {
   const [isAuth, setIsAuth] = useState(false);
@@ -28,23 +58,19 @@ function TranslateContent() {
   const [error, setError] = useState("");
   const [engine, setEngine] = usePersistedState("translate_engine", "");
 
-  // Auth Guard
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const loggedIn = localStorage.getItem("isLoggedIn") === "true";
-      if (!loggedIn) {
-        showToast("Please sign in to access this tool.", "error");
-        router.push("/login?redirect=/translate");
-      } else {
-        setIsAuth(true);
-      }
+      setIsAuth(true);
     }
-  }, [router]);
+  }, []);
 
   useEffect(() => {
     const text = searchParams.get("text");
-    if (text) { setSourceText(text); setStatus("idle"); }
-  }, [searchParams]);
+    if (text) {
+      setSourceText(text);
+      setStatus("idle");
+    }
+  }, [searchParams, setSourceText, setStatus]);
 
   if (!isAuth) {
     return (
@@ -56,8 +82,14 @@ function TranslateContent() {
 
   const handleReset = () => {
     clearPersistedState("translate_");
-    setSourceText(""); setTranslatedText(""); setSourceLang("auto");
-    setTargetLang("hi"); setStatus("idle"); setError(""); setEngine("");
+    setSourceText("");
+    setTranslatedText("");
+    setSourceLang("auto");
+    setTargetLang("hi");
+    setStatus("idle");
+    setError("");
+    setEngine("");
+    showToast("Translation board cleared", "info");
   };
 
   const handleTranslate = async () => {
@@ -80,10 +112,10 @@ function TranslateContent() {
           try {
             const data = JSON.parse(text);
             errorMsg = data.error || errorMsg;
-          } catch (e) {
+          } catch {
             errorMsg = `Server error: ${res.status} ${res.statusText}`;
           }
-        } catch (e) {}
+        } catch {}
         throw new Error(errorMsg);
       }
 
@@ -113,161 +145,338 @@ function TranslateContent() {
   };
 
   const swapLanguages = () => {
-    if (sourceLang === "auto") return;
+    if (sourceLang === "auto") {
+      showToast("Cannot swap when Source is Auto Detect", "info");
+      return;
+    }
     setSourceLang(targetLang);
     setTargetLang(sourceLang);
     setSourceText(translatedText);
     setTranslatedText(sourceText);
+    showToast("Languages & text swapped", "success");
   };
 
   const copyTranslation = () => {
+    if (!translatedText) return;
     navigator.clipboard.writeText(translatedText);
     showToast("Translation copied!", "success");
   };
 
   const speakText = (text: string, lang: string) => {
+    if (!text.trim()) return;
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = lang === "auto" ? "en" : lang;
     utterance.rate = 0.9;
     speechSynthesis.cancel();
     speechSynthesis.speak(utterance);
+    showToast("Playing speech...", "info");
   };
 
-  const langEntries = Object.entries(LANGUAGES).filter(([code]) => code !== "auto");
+  const sampleTexts = [
+    "Welcome to TransTTS! Speak, record, transcribe, and translate audio effortlessly.",
+    "नमस्ते! ट्रान्स-टीटीएस में आपका स्वागत है। अपनी आवाज़ को रिकॉर्ड और अनुवाद करें।",
+  ];
 
   return (
     <div className="dashboard-layout">
       <Sidebar active="translate" />
       <div className="dashboard-content-wrapper">
-        <div className="app-header fade-in" style={{ padding: 0, marginBottom: "32px", textAlign: "left" }}>
-          <h1 style={{ fontSize: "2.4rem", display: "flex", alignItems: "center", gap: "12px" }}>
-            🌐 <span className="gradient-text">AI Translation Board</span>
-          </h1>
-          <p>Translate text to Hindi and 25+ languages in a modular grid</p>
+        {/* Header Title */}
+        <div className="app-header fade-in" style={{ marginBottom: "24px", textAlign: "left" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
+            <div>
+              <h1 style={{ fontSize: "2.2rem", display: "flex", alignItems: "center", gap: "12px" }}>
+                <GlobeIcon size={32} color="var(--accent)" />
+                <span className="gradient-text">AI Translation Studio</span>
+              </h1>
+              <p style={{ marginTop: "4px", color: "var(--text-dim)", fontSize: "0.95rem" }}>
+                Seamless multi-language AI translation with instant playback and voice generation
+              </p>
+            </div>
+            
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={handleReset}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid var(--border)" }}
+            >
+              <RefreshIcon size={14} color="currentColor" /> Reset Board
+            </button>
+          </div>
         </div>
 
-          {/* Modular Grid Layout */}
-          <div className="teleprompter-grid fade-in" style={{ gridTemplateColumns: "0.7fr 1.3fr", gap: "24px", height: "auto" }}>
+        {/* Error Alert if any */}
+        {error && (
+          <div className="badge badge-error fade-in" style={{ padding: "14px 20px", fontSize: "0.9rem", marginBottom: "20px", display: "flex", alignItems: "center", gap: 10, width: "100%" }}>
+            <AlertCircleIcon size={18} color="currentColor" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {/* Top Control Bar: Custom Language Selection with Flags */}
+        <div className="glass-card fade-in" style={{ padding: "20px 24px", marginBottom: "24px" }}>
+          <div className="translate-toolbar-grid">
             
-            {/* LEFT COLUMN: Settings & Actions */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+            {/* Source Language Column */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              <LanguageSelect
+                label="SOURCE LANGUAGE"
+                value={sourceLang}
+                onChange={(code) => setSourceLang(code)}
+                allowAuto={true}
+              />
               
-              {/* Language selection card */}
-              <div className="glass-card" style={{ padding: "24px" }}>
-                <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "16px" }}>⚙️ Translation Settings</h3>
-                
-                <div className="form-group">
-                  <label className="form-label">Source Language</label>
-                  <select className="select-input" value={sourceLang} onChange={(e) => setSourceLang(e.target.value)}>
-                    <option value="auto">🌐 Auto Detect</option>
-                    {langEntries.map(([code, lang]) => (
-                      <option key={code} value={code}>{lang.flag} {lang.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div style={{ display: "flex", justifyContent: "center", margin: "8px 0" }}>
-                  <button type="button" className="btn btn-outline btn-sm" onClick={swapLanguages} title="Swap languages">
-                    🔄 Swap Direction
+              {/* Quick Pills with Flags */}
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "4px" }}>
+                {QUICK_SOURCE_PILLS.map((pill) => (
+                  <button
+                    key={pill.code}
+                    type="button"
+                    onClick={() => setSourceLang(pill.code)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "4px 10px",
+                      borderRadius: "100px",
+                      fontSize: "0.78rem",
+                      fontWeight: 600,
+                      border: sourceLang === pill.code ? "1px solid var(--accent)" : "1px solid var(--border)",
+                      background: sourceLang === pill.code ? "rgba(255,128,0,0.12)" : "var(--glass2)",
+                      color: sourceLang === pill.code ? "var(--accent)" : "var(--text)",
+                      cursor: "pointer",
+                      transition: "all 0.2s ease"
+                    }}
+                  >
+                    <FlagImage flagCode={pill.flagCode} name={pill.label} size={18} />
+                    <span>{pill.label}</span>
                   </button>
-                </div>
-
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Target Language</label>
-                  <select className="select-input" value={targetLang} onChange={(e) => setTargetLang(e.target.value)}>
-                    {langEntries.map(([code, lang]) => (
-                      <option key={code} value={code}>{lang.flag} {lang.name}</option>
-                    ))}
-                  </select>
-                </div>
-
+                ))}
               </div>
-
-              {/* Action Buttons card */}
-              <div className="glass-card" style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "12px" }}>
-                <button
-                  className="btn btn-primary"
-                  onClick={handleTranslate}
-                  disabled={!sourceText.trim() || status === "translating"}
-                  style={{ width: "100%" }}
-                >
-                  {status === "translating" ? (
-                    <><span className="spinner"></span> Translating...</>
-                  ) : (
-                    "🌐 Translate Now"
-                  )}
-                </button>
-
-                {translatedText && (
-                  <button className="btn btn-outline btn-sm" style={{ width: "100%" }} onClick={() => {
-                    router.push(`/tts?text=${encodeURIComponent(translatedText.substring(0, 500))}`);
-                  }}>
-                    🔊 Generate Voice
-                  </button>
-                )}
-
-                <button className="btn btn-ghost btn-sm" style={{ width: "100%" }} onClick={handleReset}>
-                  🔄 Reset Panel
-                </button>
-              </div>
-
-              {error && (
-                <div className="badge badge-error fade-in" style={{ padding: "12px 18px", fontSize: "0.85rem", display: "block" }}>
-                  ❌ {error}
-                </div>
-              )}
-
             </div>
 
-            {/* RIGHT COLUMN: Panels Grid */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-              
-              {/* Source Text Panel */}
-              <div className="glass-card" style={{ padding: "24px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-                  <h3 style={{ fontSize: "1.1rem", fontWeight: 700 }}>📝 Source Text</h3>
-                  <button className="btn btn-ghost btn-sm" onClick={() => speakText(sourceText, sourceLang)} disabled={!sourceText}>
-                    🔊 Speak
+            {/* Swap Button Column */}
+            <div className="translate-swap-container">
+              <button
+                type="button"
+                className="btn btn-outline swap-btn"
+                onClick={swapLanguages}
+                title="Swap source and target languages"
+                disabled={sourceLang === "auto"}
+                style={{
+                  width: "44px",
+                  height: "44px",
+                  borderRadius: "50%",
+                  padding: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.06)"
+                }}
+              >
+                <RepeatIcon size={18} color="currentColor" />
+              </button>
+            </div>
+
+            {/* Target Language Column */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              <LanguageSelect
+                label="TARGET LANGUAGE"
+                value={targetLang}
+                onChange={(code) => setTargetLang(code)}
+                allowAuto={false}
+              />
+
+              {/* Quick Pills with Flags */}
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "4px" }}>
+                {QUICK_TARGET_PILLS.map((pill) => (
+                  <button
+                    key={pill.code}
+                    type="button"
+                    onClick={() => setTargetLang(pill.code)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "4px 10px",
+                      borderRadius: "100px",
+                      fontSize: "0.78rem",
+                      fontWeight: 600,
+                      border: targetLang === pill.code ? "1px solid var(--accent)" : "1px solid var(--border)",
+                      background: targetLang === pill.code ? "rgba(255,128,0,0.12)" : "var(--glass2)",
+                      color: targetLang === pill.code ? "var(--accent)" : "var(--text)",
+                      cursor: "pointer",
+                      transition: "all 0.2s ease"
+                    }}
+                  >
+                    <FlagImage flagCode={pill.flagCode} name={pill.label} size={18} />
+                    <span>{pill.label}</span>
                   </button>
-                </div>
-                <textarea
-                  className="textarea-input"
-                  placeholder="Type or paste text to translate..."
-                  value={sourceText}
-                  onChange={(e) => { setSourceText(e.target.value); setStatus("idle"); }}
-                  style={{ minHeight: "160px", resize: "vertical" }}
-                />
-                <div className="char-count" style={{ marginTop: "8px" }}>{sourceText.length} / 10,000 characters</div>
+                ))}
               </div>
-
-              {/* Translation Output Panel */}
-              <div className="glass-card" style={{ padding: "24px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-                  <h3 style={{ fontSize: "1.1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "8px" }}>
-                    ✨ Translation Output
-                    {engine && <span className="badge badge-info">{engine}</span>}
-                  </h3>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <button className="btn btn-ghost btn-sm" onClick={() => speakText(translatedText, targetLang)} disabled={!translatedText}>
-                      🔊 Speak
-                    </button>
-                    <button className="btn btn-ghost btn-sm" onClick={copyTranslation} disabled={!translatedText}>
-                      📋 Copy
-                    </button>
-                  </div>
-                </div>
-                <textarea
-                  className="textarea-input"
-                  placeholder="Translation will appear here..."
-                  value={translatedText}
-                  readOnly
-                  style={{ minHeight: "160px", resize: "vertical", background: "rgba(0,0,0,0.15)" }}
-                />
-              </div>
-
             </div>
 
           </div>
+        </div>
+
+        {/* Dual Panels: Studio Grid Layout */}
+        <div className="translate-studio-grid fade-in">
+
+          {/* LEFT PANEL: Source Text */}
+          <div className="glass-card studio-card">
+            <div className="studio-card-header">
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div className="studio-icon-badge">
+                  <FileTextIcon size={18} color="var(--accent)" />
+                </div>
+                <h3 style={{ fontSize: "1.05rem", fontWeight: 700 }}>Source Text</h3>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {sourceText && (
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => { setSourceText(""); setStatus("idle"); }}
+                    title="Clear input text"
+                    style={{ padding: "6px 12px" }}
+                  >
+                    <TrashIcon size={14} color="currentColor" /> Clear
+                  </button>
+                )}
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => speakText(sourceText, sourceLang)}
+                  disabled={!sourceText.trim()}
+                  title="Listen to original text"
+                  style={{ padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 6 }}
+                >
+                  <VolumeIcon size={14} color="currentColor" /> Speak
+                </button>
+              </div>
+            </div>
+
+            <div className="studio-card-body">
+              <textarea
+                className="textarea-input studio-textarea"
+                placeholder="Type or paste your text to translate..."
+                value={sourceText}
+                onChange={(e) => { setSourceText(e.target.value); setStatus("idle"); }}
+              />
+
+              {!sourceText.trim() && (
+                <div style={{ marginTop: "12px", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "0.78rem", color: "var(--text-dim)" }}>Try sample text:</span>
+                  {sampleTexts.map((sample, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => { setSourceText(sample); setStatus("idle"); }}
+                      style={{ fontSize: "0.76rem", padding: "4px 10px", border: "1px solid var(--border)", background: "var(--glass2)" }}
+                    >
+                      Sample {idx + 1}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="studio-card-footer">
+              <div className="char-count" style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-dim)" }}>
+                {sourceText.length.toLocaleString()} / 10,000 characters
+              </div>
+
+              <button
+                className="btn btn-primary"
+                onClick={handleTranslate}
+                disabled={!sourceText.trim() || status === "translating"}
+                style={{ minWidth: "160px", height: "44px" }}
+              >
+                {status === "translating" ? (
+                  <><span className="spinner"></span> Translating...</>
+                ) : (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <GlobeIcon size={18} color="#0a0a0a" />
+                    <span>Translate Now</span>
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* RIGHT PANEL: Translation Output */}
+          <div className="glass-card studio-card">
+            <div className="studio-card-header">
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div className="studio-icon-badge" style={{ background: "rgba(255,128,0,0.1)" }}>
+                  <SparklesIcon size={18} color="var(--accent)" />
+                </div>
+                <h3 style={{ fontSize: "1.05rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span>Translation Output</span>
+                  {engine && (
+                    <span className="badge badge-info" style={{ fontSize: "0.72rem", padding: "2px 8px" }}>
+                      {engine}
+                    </span>
+                  )}
+                </h3>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => speakText(translatedText, targetLang)}
+                  disabled={!translatedText.trim()}
+                  title="Listen to translation"
+                  style={{ padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 6 }}
+                >
+                  <VolumeIcon size={14} color="currentColor" /> Speak
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={copyTranslation}
+                  disabled={!translatedText.trim()}
+                  title="Copy translation"
+                  style={{ padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 6 }}
+                >
+                  <CopyIcon size={14} color="currentColor" /> Copy
+                </button>
+              </div>
+            </div>
+
+            <div className="studio-card-body">
+              <textarea
+                className="textarea-input studio-textarea studio-output-textarea"
+                placeholder="Translation will appear here instantly..."
+                value={translatedText}
+                readOnly
+              />
+            </div>
+
+            <div className="studio-card-footer">
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                {status === "done" && (
+                  <span style={{ fontSize: "0.8rem", color: "var(--success)", display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 600 }}>
+                    <CheckCircleIcon size={14} color="var(--success)" /> Translated successfully
+                  </span>
+                )}
+              </div>
+
+              {translatedText && (
+                <button
+                  className="btn btn-outline btn-sm"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, height: "42px", padding: "0 18px" }}
+                  onClick={() => {
+                    router.push(`/tts?text=${encodeURIComponent(translatedText.substring(0, 500))}`);
+                  }}
+                >
+                  <VolumeIcon size={16} color="var(--accent)" />
+                  <span>Generate Voice (TTS)</span>
+                  <ArrowRightIcon size={14} color="currentColor" />
+                </button>
+              )}
+            </div>
+          </div>
+
+        </div>
 
       </div>
     </div>

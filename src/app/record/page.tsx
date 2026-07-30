@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import { useToast } from "@/components/Toast";
@@ -8,6 +8,7 @@ import ProgressTracker from "@/components/ProgressTracker";
 import { usePersistedState, clearPersistedState } from "@/hooks/usePersistedState";
 import { addToHistory } from "@/lib/history";
 import { LANGUAGES, formatDuration, formatFileSize } from "@/lib/utils";
+import { RadioIcon, VolumeIcon, GlobeIcon, SparklesIcon, FileTextIcon, SaveIcon, XIcon, ClockIcon, DownloadIcon, RefreshIcon, CopyIcon } from "@/components/Icons";
 import type { TranscriptSegment } from "@/types";
 import VoiceRecorderTeleprompter from "@/components/VoiceRecorderTeleprompter";
 
@@ -28,18 +29,12 @@ export default function RecordPage() {
   const router = useRouter();
   const { showToast } = useToast();
 
-  // Auth Guard
+  // Enable tool usage directly
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const loggedIn = localStorage.getItem("isLoggedIn") === "true";
-      if (!loggedIn) {
-        showToast("Please sign in to access this tool.", "error");
-        router.push("/login?redirect=/record");
-      } else {
-        setIsAuth(true);
-      }
+      setIsAuth(true);
     }
-  }, [router]);
+  }, []);
 
   const handleReset = () => {
     clearPersistedState("record_");
@@ -74,14 +69,14 @@ export default function RecordPage() {
           try {
             const data = JSON.parse(text);
             errorMsg = data.error || errorMsg;
-          } catch (e) {
+          } catch {
             if (res.status === 413 || text.includes("Request Entity Too Large")) {
               errorMsg = "File too large. Maximum size is 25MB or determined by your server limits.";
             } else {
               errorMsg = `Server error: ${res.status} ${res.statusText}`;
             }
           }
-        } catch (e) {}
+        } catch {}
         throw new Error(errorMsg);
       }
 
@@ -136,7 +131,7 @@ export default function RecordPage() {
       <div className="dashboard-content-wrapper">
         <div className="app-header fade-in" style={{ padding: 0, marginBottom: "32px", textAlign: "left" }}>
           <h1 style={{ fontSize: "2.4rem", display: "flex", alignItems: "center", gap: "12px" }}>
-            🎙️ <span className="gradient-text">Voice Recorder & Teleprompter</span>
+            <RadioIcon size={32} color="#FF8000" /> <span className="gradient-text">Voice Recorder & Teleprompter</span>
           </h1>
           <p>Record your script with live active noise cancellation and transcribe it instantly</p>
         </div>
@@ -157,7 +152,9 @@ export default function RecordPage() {
           {status === "idle" && file && (
             <div className="fade-in">
               <div className="glass-card" style={{ maxWidth: "600px", margin: "0 auto", padding: 32 }}>
-                <div style={{ fontSize: "2.5rem", marginBottom: 16, textAlign: "center" }}>🎙️</div>
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
+                  <RadioIcon size={44} color="#FF8000" />
+                </div>
                 <h3 style={{ textAlign: "center", marginBottom: 8 }}>Voice Recording Ready!</h3>
                 <p style={{ color: "var(--text-dim)", textAlign: "center", fontSize: "0.9rem", marginBottom: 24 }}>
                   Successfully captured audio: <strong>{file.name}</strong> ({formatFileSize(file.size)})
@@ -168,7 +165,7 @@ export default function RecordPage() {
                   <select className="select-input" value={language} onChange={(e) => setLanguage(e.target.value)}>
                     {Object.entries(LANGUAGES).map(([code, lang]) => (
                       <option key={code} value={code}>
-                        {lang.flag} {lang.name}
+                        {lang.name}
                       </option>
                     ))}
                   </select>
@@ -177,16 +174,17 @@ export default function RecordPage() {
 
                 {error && (
                   <div className="badge badge-error" style={{ padding: "12px 18px", fontSize: "0.9rem", marginTop: 12, width: "100%", justifyContent: "center" }}>
-                    ❌ {error}
+                    {error}
                   </div>
                 )}
 
                 <div style={{ display: "flex", gap: 12, marginTop: 24 }}>
                   <button className="btn btn-outline" style={{ flex: 1 }} onClick={handleReset}>
-                    🔄 Record Again
+                    Record Again
                   </button>
-                  <button className="btn btn-primary" style={{ flex: 1.5 }} onClick={handleTranscribe}>
-                    ✨ Start AI Transcription
+                  <button className="btn btn-primary" style={{ flex: 1.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }} onClick={handleTranscribe}>
+                    <SparklesIcon size={16} color="#0a0a0a" />
+                    <span>Start AI Transcription</span>
                   </button>
                 </div>
               </div>
@@ -197,7 +195,6 @@ export default function RecordPage() {
           {status === "error" && (
             <div className="fade-in">
               <div className="glass-card" style={{ maxWidth: "600px", margin: "0 auto", textAlign: "center", padding: 32 }}>
-                <div style={{ fontSize: "2.5rem", marginBottom: 16 }}>⚠️</div>
                 <h3 style={{ marginBottom: 8 }}>Transcription Failed</h3>
                 <p style={{ color: "var(--error)", fontSize: "0.9rem", marginBottom: 24 }}>
                   {error || "An unexpected error occurred during processing."}
@@ -207,7 +204,7 @@ export default function RecordPage() {
                     Discard &amp; Restart
                   </button>
                   <button className="btn btn-primary" onClick={handleTranscribe}>
-                    🔄 Retry Transcription
+                    Retry Transcription
                   </button>
                 </div>
               </div>
@@ -232,39 +229,48 @@ export default function RecordPage() {
           {status === "done" && (
             <div className="fade-in">
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-                <span className="badge badge-success">✅ Transcription Complete</span>
+                <span className="badge badge-success">Transcription Complete</span>
                 {detectedLang && (
                   <span className="badge badge-info">
-                    🌐 {LANGUAGES[detectedLang]?.name || detectedLang}
+                    {LANGUAGES[detectedLang]?.name || detectedLang}
                   </span>
                 )}
                 {duration > 0 && (
-                  <span className="badge badge-info">⏱️ {formatDuration(duration)}</span>
+                  <span className="badge badge-info">{formatDuration(duration)}</span>
                 )}
               </div>
 
               {/* Full transcript */}
               <div className="glass-card" style={{ marginBottom: 16 }}>
                 <div className="edit-bar">
-                  <h3 style={{ flex: 1 }}>📝 Full Transcript</h3>
+                  <h3 style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
+                    <FileTextIcon size={18} color="#FF8000" />
+                    <span>Full Transcript</span>
+                  </h3>
                   {!isEditing ? (
                     <>
                       <button className="btn btn-ghost btn-sm" onClick={() => {
                         setOriginalTranscript(transcript);
                         setIsEditing(true);
-                      }}>✏️ Edit</button>
-                      <button className="btn btn-ghost btn-sm" onClick={copyTranscript}>📋 Copy</button>
+                      }}>Edit</button>
+                      <button className="btn btn-ghost btn-sm" onClick={copyTranscript} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <CopyIcon size={14} color="currentColor" /> Copy
+                      </button>
                     </>
                   ) : (
                     <>
                       <button className="btn btn-primary btn-sm" onClick={() => {
                         setIsEditing(false);
                         showToast("Transcript saved!", "success");
-                      }}>💾 Save</button>
+                      }} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <SaveIcon size={14} color="#0a0a0a" /> Save
+                      </button>
                       <button className="btn btn-ghost btn-sm" onClick={() => {
                         setTranscript(originalTranscript);
                         setIsEditing(false);
-                      }}>✕ Cancel</button>
+                      }} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <XIcon size={14} color="currentColor" /> Cancel
+                      </button>
                     </>
                   )}
                 </div>
@@ -282,7 +288,9 @@ export default function RecordPage() {
               {/* Segments */}
               {segments.length > 0 && (
                 <div className="transcript-box">
-                  <h3 style={{ marginBottom: 16 }}>⏱️ Timestamped Segments</h3>
+                  <h3 style={{ marginBottom: 16, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <ClockIcon size={18} color="#FF8000" /> Timestamped Segments
+                  </h3>
                   {segments.map((seg) => (
                     <div key={seg.id} className="segment">
                       <span className="segment-time">[{formatDuration(seg.start)}]</span>
@@ -294,14 +302,22 @@ export default function RecordPage() {
 
               {/* Actions */}
               <div className="action-bar">
-                <button className="btn btn-primary" onClick={() => setShowExport(true)}>📥 Export Transcript</button>
+                <button className="btn btn-primary" onClick={() => setShowExport(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <DownloadIcon size={16} color="#0a0a0a" /> Export Transcript
+                </button>
                 <button className="btn btn-outline" onClick={() => {
                   router.push(`/translate?text=${encodeURIComponent(transcript.substring(0, 2000))}`);
-                }}>🌐 Translate</button>
+                }} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <GlobeIcon size={16} color="currentColor" /> Translate
+                </button>
                 <button className="btn btn-outline" onClick={() => {
                   router.push(`/tts?text=${encodeURIComponent(transcript.substring(0, 500))}`);
-                }}>🔊 Generate Voice</button>
-                <button className="btn btn-ghost" onClick={handleReset}>🔄 New Recording</button>
+                }} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <VolumeIcon size={16} color="currentColor" /> Generate Voice
+                </button>
+                <button className="btn btn-ghost" onClick={handleReset} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <RefreshIcon size={16} color="currentColor" /> New Recording
+                </button>
               </div>
 
               <ExportModal

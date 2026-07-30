@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { useToast } from "@/components/Toast";
+import { CheckCircleIcon, SparklesIcon } from "@/components/landing/Icons";
 
 function LoginContent() {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -52,18 +53,7 @@ function LoginContent() {
     }, 1200);
   };
 
-  const handleSocialLogin = (provider: string) => {
-    setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      localStorage.setItem("isLoggedIn", "true");
-      localStorage.setItem("userEmail", `${provider.toLowerCase()}user@gmail.com`);
-      localStorage.setItem("userName", `${provider} User`);
-      
-      showToast(`Logged in successfully via ${provider}!`, "success");
-      router.push(redirectPath);
-    }, 1000);
-  };
+
 
   return (
     <>
@@ -71,36 +61,40 @@ function LoginContent() {
       <main className="app-page" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "calc(100vh - 64px)", padding: "40px 20px" }}>
         <div className="container" style={{ maxWidth: "1000px" }}>
           
-          <div className="teleprompter-grid fade-in" style={{ gridTemplateColumns: "1fr 1.1fr", minHeight: "540px" }}>
+          <div className="teleprompter-grid fade-in" style={{ gridTemplateColumns: "1fr 1.1fr", minHeight: "540px", alignItems: "stretch" }}>
             
             {/* LEFT SIDE: BRANDING / BENEFITS */}
-            <div className="glass-card" style={{ display: "flex", flexDirection: "column", justifyContent: "center", padding: "40px", background: "radial-gradient(circle at 10% 10%, rgba(99,102,241,0.08), transparent), var(--bg-card)", borderRight: "1px solid var(--border)" }}>
-              <div style={{ fontSize: "3rem", marginBottom: "16px" }}>🎙️</div>
-              <h2 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "16px", lineHeight: "1.2" }}>
-                Unlock the Power of <span className="gradient-text">AI Audio</span>
-              </h2>
-              <p style={{ color: "var(--text-dim)", fontSize: "0.95rem", lineHeight: "1.7", marginBottom: "28px" }}>
-                Create a free account to access your personal dashboard, track usage quotas, and manage all your transcription and translation jobs in one place.
-              </p>
+            <div className="glass-card" style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "40px", background: "radial-gradient(circle at 10% 10%, rgba(255,128,0,0.08), transparent), #ffffff", borderRight: "1px solid var(--border)", height: "100%" }}>
+              <div>
+                <div style={{ marginBottom: "20px" }}>
+                  <img src="/logo.svg" alt="TransTTS" style={{ height: "32px", width: "auto" }} />
+                </div>
+                <h2 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "16px", lineHeight: "1.2" }}>
+                  Unlock the Power of <span className="gradient-text">AI Audio</span>
+                </h2>
+                <p style={{ color: "var(--text-dim)", fontSize: "0.95rem", lineHeight: "1.7", marginBottom: "28px" }}>
+                  Create a free account to access your personal dashboard, track usage quotas, and manage all your transcription and translation jobs in one place.
+                </p>
+              </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                 <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-                  <span style={{ fontSize: "1.2rem", color: "var(--accent)" }}>✔️</span>
+                  <CheckCircleIcon size={18} color="#FF8000" />
                   <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>Save transcripts and generate voices instantly</span>
                 </div>
                 <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-                  <span style={{ fontSize: "1.2rem", color: "var(--accent)" }}>✔️</span>
+                  <CheckCircleIcon size={18} color="#FF8000" />
                   <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>Track free monthly usage quotas</span>
                 </div>
                 <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-                  <span style={{ fontSize: "1.2rem", color: "var(--accent)" }}>✔️</span>
+                  <CheckCircleIcon size={18} color="#FF8000" />
                   <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>No credit card required to start</span>
                 </div>
               </div>
             </div>
 
             {/* RIGHT SIDE: AUTHENTICATION FORM CARD */}
-            <div className="glass-card" style={{ padding: "40px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+            <div className="glass-card" style={{ padding: "40px", display: "flex", flexDirection: "column", justifyContent: "space-between", height: "100%" }}>
               
               {/* Tabs header */}
               <div className="tabs" style={{ marginBottom: "24px" }}>
@@ -129,33 +123,7 @@ function LoginContent() {
                 {isSignUp ? "Enter your details to create your TransTTS account" : "Please sign in to access your secure dashboard"}
               </p>
 
-              {/* Social Logins */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "24px" }}>
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  style={{ fontSize: "0.85rem", padding: "10px" }}
-                  onClick={() => handleSocialLogin("Google")}
-                  disabled={isLoading}
-                >
-                  <span>🌐</span> Google
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  style={{ fontSize: "0.85rem", padding: "10px" }}
-                  onClick={() => handleSocialLogin("GitHub")}
-                  disabled={isLoading}
-                >
-                  <span>🐙</span> GitHub
-                </button>
-              </div>
 
-              <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
-                <div style={{ flex: 1, height: "1px", background: "var(--border)" }} />
-                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", fontWeight: 600 }}>OR EMAIL</span>
-                <div style={{ flex: 1, height: "1px", background: "var(--border)" }} />
-              </div>
 
               {/* Form */}
               <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -210,7 +178,7 @@ function LoginContent() {
                 <button
                   type="submit"
                   className="btn btn-primary btn-large"
-                  style={{ width: "100%", marginTop: "10px" }}
+                  style={{ width: "100%", marginTop: "10px", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
                   disabled={isLoading}
                 >
                   {isLoading ? (
@@ -219,7 +187,10 @@ function LoginContent() {
                       Authenticating...
                     </>
                   ) : (
-                    isSignUp ? "🚀 Create Account" : "✨ Sign In"
+                    <>
+                      <SparklesIcon size={16} color="#0a0a0a" />
+                      <span>{isSignUp ? "Create Account" : "Sign In"}</span>
+                    </>
                   )}
                 </button>
               </form>

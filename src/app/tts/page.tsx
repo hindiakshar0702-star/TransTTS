@@ -1,6 +1,6 @@
 "use client";
 import { useState, useRef, useEffect, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import { CountrySvgFlag } from "@/components/LanguageSelect";
 import { useToast } from "@/components/Toast";
@@ -9,7 +9,7 @@ import { usePersistedState, clearPersistedState } from "@/hooks/usePersistedStat
 import { addToHistory } from "@/lib/history";
 import Waveform from "@/components/Waveform";
 import {
-  VolumeIcon, SparklesIcon, RefreshIcon, FileTextIcon,
+  VolumeIcon, RefreshIcon, FileTextIcon,
   HeadphonesIcon, SettingsIcon, MusicIcon, PlayIcon,
   PauseIcon, DownloadIcon, AlertCircleIcon, SearchIcon, CheckCircleIcon
 } from "@/components/Icons";
@@ -46,7 +46,6 @@ export default function TTSPage() {
 function TTSContent() {
   const [isAuth, setIsAuth] = useState(false);
   const searchParams = useSearchParams();
-  const router = useRouter();
   const [text, setText] = usePersistedState("tts_text", "");
   const [voice, setVoice] = usePersistedState("tts_voice", "hi-female");
   const [speed, setSpeed] = usePersistedState("tts_speed", 1.0);
@@ -108,10 +107,10 @@ function TTSContent() {
           try {
             const data = JSON.parse(resText);
             errorMsg = data.error || errorMsg;
-          } catch (e) {
+          } catch {
             errorMsg = `Server error: ${res.status} ${res.statusText}`;
           }
-        } catch (e) {}
+        } catch {}
         throw new Error(errorMsg);
       }
 
