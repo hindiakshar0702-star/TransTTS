@@ -1,36 +1,68 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# TransTTS
 
-## Getting Started
+Speech toolkit built on Next.js (App Router): **transcribe** audio to text,
+**translate** across 25+ languages, and generate natural **text-to-speech**.
 
-First, run the development server:
+## Stack
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- **Next.js 16** / **React 19** (App Router, `src/` layout)
+- **Prisma** ORM → PostgreSQL (Supabase)
+- Hand-rolled auth: scrypt password hashing + `jose` JWT session cookies + Google OAuth
+- Transcription: Whisper via **Groq** (free) or **OpenAI**
+- TTS: **msedge-tts** · Translation: **MyMemory** (free) · Noise cleanup: DeepFilterNet (optional Python)
+
+## Project layout
+
+```
+src/
+  app/            routes (pages + /api/*)
+    api/auth/     register, login, logout, me, google, google/callback
+    api/          transcribe, translate, tts, tts/audio/[id], jobs, jobs/[id], clean-audio
+  components/     UI (Icons.tsx, Sidebar, Navbar, landing/*)
+  lib/            auth.ts, jwt.ts, prisma.ts, api-guard.ts, useSession.ts, utils.ts
+  middleware.ts   session gate for app routes
+prisma/           schema.prisma + migrations
+public/           served static assets (flags/, avatar/, logos, worklets/)
+scripts/          check-links.js
+tests/            Playwright e2e + a11y
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`generated/` (TTS output) and `uploads/` (transient) are runtime dirs — gitignored.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Setup
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Install: `npm install`
+2. Create `.env.local` with:
 
-## Learn More
+   ```bash
+   DATABASE_URL=            # Supabase Postgres (pooled)
+   DIRECT_URL=             # Supabase Postgres (direct, for migrations)
+   AUTH_SECRET=            # >=32 chars — node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+   GROQ_API_KEY=           # or OPENAI_API_KEY
+   GOOGLE_CLIENT_ID=       # optional — enables Google login
+   GOOGLE_CLIENT_SECRET=
+   NEXT_PUBLIC_APP_URL=    # e.g. http://localhost:3000
+   ```
 
-To learn more about Next.js, take a look at the following resources:
+3. Apply schema: `npx prisma migrate dev`
+4. Run: `npm run dev` → http://localhost:3000
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Google OAuth: register the callback `http://localhost:3000/api/auth/google/callback`
+in the Google Cloud OAuth client.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Scripts
 
-## Deploy on Vercel
+| Command | Does |
+|---|---|
+| `npm run dev` | dev server |
+| `npm run build` / `start` | production build / serve |
+| `npm run lint` | ESLint |
+| `npm run test:e2e` | Playwright e2e |
+| `npm run test:a11y` | accessibility audit |
+| `npm run test:links` | link checker |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Security
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Public, file-handling service — see [CLAUDE.md](CLAUDE.md) for the security
+principles (upload validation, path-traversal defense, rate limiting, per-user
+data isolation). App routes require a session; jobs are scoped to their owner.
