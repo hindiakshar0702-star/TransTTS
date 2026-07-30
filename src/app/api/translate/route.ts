@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { guard } from "@/lib/api-guard";
+import { getSessionUser } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
   let jobId: string | null = null;
 
   const blocked = guard(req, "translate", { limit: 30, windowMs: 60_000 });
   if (blocked) return blocked;
+
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) {
+    return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
+  }
 
   try {
     const { text, sourceLang, targetLang } = await req.json();
@@ -30,6 +36,7 @@ export async function POST(req: NextRequest) {
     // Create job in DB
     const job = await prisma.job.create({
       data: {
+        userId: sessionUser.id,
         type: "translate",
         title: text.substring(0, 80),
         status: "processing",

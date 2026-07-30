@@ -1,18 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { getSessionUser } from "@/lib/auth";
 import fs from "fs/promises";
 import path from "path";
 
-// GET /api/jobs — List all jobs
+// GET /api/jobs — List the current user's jobs (admins see all).
 export async function GET(req: NextRequest) {
   try {
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     const type = req.nextUrl.searchParams.get("type");
-    // Clamp pagination — reject NaN/negative/huge values so a crafted
-    // ?limit=999999999 cannot dump the whole table or exhaust memory.
+    // Clamp pagination — reject NaN/negative/huge values.
     const page = Math.max(1, parseInt(req.nextUrl.searchParams.get("page") || "1") || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.nextUrl.searchParams.get("limit") || "50") || 50));
 
-    const where = type ? { type } : {};
+    // Data isolation: a user only ever sees their own jobs. Admins see all.
+    const scope = user.role === "admin" ? {} : { userId: user.id };
+    const where = { ...scope, ...(type ? { type } : {}) };
 
     const [jobs, total] = await Promise.all([
       prisma.job.findMany({
@@ -24,15 +29,14 @@ export async function GET(req: NextRequest) {
       prisma.job.count({ where }),
     ]);
 
-    // Stats
     const stats = (await prisma.job.groupBy({
       by: ["type"],
-      where: { status: "completed" },
+      where: { ...scope, status: "completed" },
       _count: true,
     })) as unknown as Array<{ type: string; _count: number }>;
 
     const totalDuration = await prisma.job.aggregate({
-      where: { type: "transcribe", status: "completed" },
+      where: { ...scope, type: "transcribe", status: "completed" },
       _sum: { duration: true },
     });
 
@@ -55,43 +59,38 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// DELETE /api/jobs — Clear all jobs
-export async function DELETE(req: NextRequest) {
+// DELETE /api/jobs — Clear history. A normal user clears only their own jobs;
+// an admin clears everything. (Replaces the old ADMIN_SECRET_KEY header gate
+// with a real session role check.)
+export async function DELETE() {
   try {
-    // Admin token check — FAIL CLOSED. If no secret is configured, this
-    // destructive endpoint (wipes every job + deletes files) stays disabled
-    // rather than being open to the public.
-    const adminSecret = process.env.ADMIN_SECRET_KEY;
-    if (!adminSecret) {
-      return NextResponse.json({ error: "Admin operations are not configured." }, { status: 503 });
-    }
-    if (req.headers.get("x-admin-token") !== adminSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    // Clean up physical audio files from the generated directory
-    const generatedDir = path.normalize(path.join(/*turbopackIgnore: true*/ process.cwd(), "generated"));
-    const dirExists = await fs.access(generatedDir).then(() => true).catch(() => false);
-    if (dirExists) {
-      const files = await fs.readdir(generatedDir);
-      await Promise.all(
-        files.map(async (file) => {
-          if (file.endsWith(".mp3")) {
-            const filePath = path.normalize(path.join(generatedDir, file));
-            if (filePath.startsWith(generatedDir)) {
-              try {
-                await fs.unlink(filePath);
-              } catch (err) {
-                console.error(`Failed to delete file ${file}:`, err);
-              }
-            }
+    const isAdmin = user.role === "admin";
+    const where = isAdmin ? {} : { userId: user.id };
+
+    // Remove the audio files belonging to the jobs being deleted.
+    const ttsJobs = await prisma.job.findMany({
+      where: { ...where, type: "tts", audioUrl: { not: null } },
+      select: { audioUrl: true },
+    });
+    const generatedDir = path.normalize(path.join(process.cwd(), "generated"));
+    await Promise.all(
+      ttsJobs.map(async (j) => {
+        const fileId = j.audioUrl?.split("/").pop();
+        if (fileId && /^[a-zA-Z0-9-]+$/.test(fileId)) {
+          const filePath = path.normalize(path.join(generatedDir, `${fileId}.mp3`));
+          // Path-traversal defense-in-depth.
+          if (filePath.startsWith(generatedDir)) {
+            await fs.unlink(filePath).catch(() => {});
           }
-        })
-      );
-    }
+        }
+      })
+    );
 
-    await prisma.job.deleteMany();
-    return NextResponse.json({ message: "All jobs cleared" });
+    await prisma.job.deleteMany({ where });
+    return NextResponse.json({ message: isAdmin ? "All jobs cleared" : "Your history was cleared" });
   } catch (error: unknown) {
     console.error("Clear jobs error:", error);
     return NextResponse.json({ error: "Failed to clear jobs" }, { status: 500 });

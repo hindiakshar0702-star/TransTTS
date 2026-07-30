@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { generateId } from "@/lib/utils";
 import { getGeneratedDir } from "@/lib/server-utils";
 import { guard } from "@/lib/api-guard";
+import { getSessionUser } from "@/lib/auth";
 import fs from "fs/promises";
 import path from "path";
 
@@ -35,6 +36,11 @@ export async function POST(req: NextRequest) {
   const blocked = guard(req, "tts", { limit: 20, windowMs: 60_000 });
   if (blocked) return blocked;
 
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) {
+    return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
+  }
+
   try {
     const { text, voice, speed } = await req.json();
 
@@ -59,6 +65,7 @@ export async function POST(req: NextRequest) {
     // Create job in DB
     const job = await prisma.job.create({
       data: {
+        userId: sessionUser.id,
         type: "tts",
         title: text.substring(0, 80),
         status: "processing",

@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { generateId } from "@/lib/utils";
 import { getUploadsDir } from "@/lib/server-utils";
 import { guard } from "@/lib/api-guard";
+import { getSessionUser } from "@/lib/auth";
 import fs from "fs";
 import path from "path";
 
@@ -71,6 +72,11 @@ export async function POST(req: NextRequest) {
   const blocked = guard(req, "transcribe", { limit: 10, windowMs: 60_000 });
   if (blocked) return blocked;
 
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) {
+    return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
+  }
+
   try {
     const config = getClient();
     if (!config) {
@@ -104,6 +110,7 @@ export async function POST(req: NextRequest) {
     // Create job in DB
     const job = await prisma.job.create({
       data: {
+        userId: sessionUser.id,
         type: "transcribe",
         title: file.name,
         status: "processing",

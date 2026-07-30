@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import prisma from "@/lib/prisma";
+import { getSessionUser } from "@/lib/auth";
 import fs from "fs/promises";
 import path from "path";
 
@@ -22,6 +24,18 @@ export async function GET(
       return NextResponse.json({ error: "Invalid audio ID format" }, { status: 400 });
     }
 
+    // Ownership check: only the owning user (or an admin) may fetch the audio.
+    // Same-origin <audio>/download requests carry the session cookie.
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const job = await prisma.job.findFirst({
+      where: { audioUrl: `/api/tts/audio/${id}` },
+      select: { userId: true },
+    });
+    if (!job || (job.userId !== user.id && user.role !== "admin")) {
+      return NextResponse.json({ error: "Audio not found" }, { status: 404 });
+    }
+
     const fileExists = await fs.access(filePath).then(() => true).catch(() => false);
     if (!fileExists) {
       return NextResponse.json({ error: "Audio not found" }, { status: 404 });
@@ -36,7 +50,8 @@ export async function GET(
       "Content-Type": "audio/mpeg",
       "Content-Length": fileBuffer.length.toString(),
       "Accept-Ranges": "bytes",
-      "Cache-Control": "public, max-age=86400",
+      // Per-user resource — never cache in shared/proxy caches.
+      "Cache-Control": "private, max-age=86400",
     };
 
     if (download) {
