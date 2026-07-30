@@ -3,12 +3,32 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  name         String?
+  // Null for accounts created via OAuth only (no local password).
+  passwordHash String?
+  // "user" | "admin" — SQLite has no enums, enforce in app layer.
+  role         String   @default("user")
+  // "credentials" | "google" — how the account first signed up.
+  provider     String   @default("credentials")
+  image        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  jobs         Job[]
 }
 
 model Job {
   id         String   @id @default(uuid())
+  // Nullable: legacy jobs created before auth have no owner.
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   type       String   // "transcribe" | "translate" | "tts"
   title      String
   status     String   @default("processing") // "processing" | "completed" | "error"
