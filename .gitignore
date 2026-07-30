@@ -47,3 +47,11 @@ prisma/dev.db-journal
 # uploads & generated files
 /uploads
 /generated
+
+# testing artifacts
+/test-results
+/playwright-report
+
+# local-only asset dumps (kept on disk, not committed)
+/icons
+/avatar
