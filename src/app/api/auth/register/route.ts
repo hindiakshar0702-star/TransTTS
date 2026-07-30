@@ -30,7 +30,11 @@ export async function POST(req: NextRequest) {
     const safeName =
       typeof name === "string" && name.trim() ? name.trim().slice(0, 80) : null;
 
-    const existing = await prisma.user.findUnique({ where: { email: normEmail } });
+    // Existence check only — never load the password hash into memory here.
+    const existing = await prisma.user.findUnique({
+      where: { email: normEmail },
+      select: { id: true },
+    });
     if (existing) {
       return NextResponse.json(
         { error: "An account with this email already exists." },
