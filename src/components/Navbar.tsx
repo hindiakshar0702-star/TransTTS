@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useToast } from "@/components/Toast";
+import { useSession, logout } from "@/lib/useSession";
 import { RadioIcon, MicIcon, GlobeIcon, VolumeIcon, ArrowUpRightIcon } from "@/components/landing/Icons";
 
 import Logo from "@/components/Logo";
@@ -12,24 +12,15 @@ export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { showToast } = useToast();
-  
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setIsLoggedIn(localStorage.getItem("isLoggedIn") === "true");
-    }
-  }, [pathname]);
+  const { user } = useSession();
+  const isLoggedIn = !!user;
 
-  const handleSignOut = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("isLoggedIn");
-      localStorage.removeItem("userEmail");
-      localStorage.removeItem("userName");
-      setIsLoggedIn(false);
-      showToast("Signed out successfully.", "info");
-      router.push("/");
-    }
+  const handleSignOut = async () => {
+    await logout();
+    showToast("Signed out successfully.", "info");
+    router.push("/");
+    router.refresh();
   };
 
   const navItems = [

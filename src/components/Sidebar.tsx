@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/Toast";
+import { useSession, logout } from "@/lib/useSession";
 import { HomeIcon, RadioIcon, MicIcon, GlobeIcon, VolumeIcon, UserIcon, LogOutIcon, SettingsIcon } from "@/components/Icons";
 import Logo from "@/components/Logo";
 
@@ -10,42 +10,19 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ active }: SidebarProps) {
-  const [userName, setUserName] = useState("");
-  const [userEmail, setUserEmail] = useState("");
-  const [userAvatar, setUserAvatar] = useState("");
   const router = useRouter();
   const { showToast } = useToast();
 
-  useEffect(() => {
-    const updateProfile = () => {
-      if (typeof window !== "undefined") {
-        setUserName(localStorage.getItem("userName") || "Google User");
-        setUserEmail(localStorage.getItem("userEmail") || "googleuser@gmail.com");
-        setUserAvatar(localStorage.getItem("userAvatar") || "");
-      }
-    };
+  const { user } = useSession();
+  const userName = user?.name || user?.email?.split("@")[0] || "User";
+  const userEmail = user?.email || "";
+  const userAvatar = user?.image || "";
 
-    updateProfile();
-
-    if (typeof window !== "undefined") {
-      window.addEventListener("storage", updateProfile);
-      window.addEventListener("profileUpdated", updateProfile);
-      return () => {
-        window.removeEventListener("storage", updateProfile);
-        window.removeEventListener("profileUpdated", updateProfile);
-      };
-    }
-  }, []);
-
-  const handleLogout = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("isLoggedIn");
-      localStorage.removeItem("userEmail");
-      localStorage.removeItem("userName");
-      localStorage.removeItem("userAvatar");
-      showToast("Signed out successfully.", "info");
-      router.push("/");
-    }
+  const handleLogout = async () => {
+    await logout();
+    showToast("Signed out successfully.", "info");
+    router.push("/");
+    router.refresh();
   };
 
   const navItems = [

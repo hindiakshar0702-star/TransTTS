@@ -6,6 +6,16 @@ import Navbar from "@/components/Navbar";
 import { useToast } from "@/components/Toast";
 import { CheckCircleIcon, SparklesIcon } from "@/components/landing/Icons";
 
+const OAUTH_ERRORS: Record<string, string> = {
+  google_not_configured: "Google sign-in is not configured yet.",
+  google_denied: "Google sign-in was cancelled.",
+  google_state: "Google sign-in session expired. Please try again.",
+  google_token: "Could not complete Google sign-in.",
+  google_userinfo: "Could not read your Google profile.",
+  google_unverified: "Your Google email is not verified.",
+  google_failed: "Google sign-in failed. Please try again.",
+};
+
 function LoginContent() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState("");
@@ -19,17 +29,22 @@ function LoginContent() {
 
   const redirectPath = searchParams.get("redirect") || "/dashboard";
 
-  // If already logged in, send to dashboard directly
+  // Surface Google OAuth failures (callback redirects back with ?error=...).
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const loggedIn = localStorage.getItem("isLoggedIn") === "true";
-      if (loggedIn) {
-        router.push(redirectPath);
-      }
-    }
+    const err = searchParams.get("error");
+    if (err) showToast(OAUTH_ERRORS[err] || "Sign-in failed. Please try again.", "error");
+  }, [searchParams, showToast]);
+
+  // If already authenticated (valid session cookie), skip the form.
+  useEffect(() => {
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then((r) => {
+        if (r.ok) router.push(redirectPath);
+      })
+      .catch(() => {});
   }, [router, redirectPath]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password || (isSignUp && !name)) {
       showToast("Please fill in all required fields.", "error");
@@ -37,20 +52,31 @@ function LoginContent() {
     }
 
     setIsLoading(true);
+    try {
+      const endpoint = isSignUp ? "/api/auth/register" : "/api/auth/login";
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(isSignUp ? { email, password, name } : { email, password }),
+      });
+      const data = await res.json().catch(() => ({}));
 
-    // Simulate network authentication request
-    setTimeout(() => {
-      setIsLoading(false);
-      localStorage.setItem("isLoggedIn", "true");
-      localStorage.setItem("userEmail", email);
-      localStorage.setItem("userName", isSignUp ? name : email.split("@")[0]);
-      
+      if (!res.ok) {
+        showToast(data.error || "Authentication failed. Please try again.", "error");
+        setIsLoading(false);
+        return;
+      }
+
       showToast(
         isSignUp ? "Account created successfully!" : "Logged in successfully!",
         "success"
       );
       router.push(redirectPath);
-    }, 1200);
+      router.refresh();
+    } catch {
+      showToast("Network error. Please try again.", "error");
+      setIsLoading(false);
+    }
   };
 
 
@@ -124,6 +150,28 @@ function LoginContent() {
               </p>
 
 
+
+              {/* Google OAuth */}
+              <a
+                href="/api/auth/google"
+                className="btn btn-secondary btn-large"
+                style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "10px", textDecoration: "none", marginBottom: "8px" }}
+              >
+                <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+                  <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.3 6.1 29.4 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.3-.4-3.5z"/>
+                  <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.3 6.1 29.4 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
+                  <path fill="#4CAF50" d="M24 44c5.3 0 10.1-2 13.7-5.3l-6.3-5.3C29.3 35 26.8 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.6 39.6 16.2 44 24 44z"/>
+                  <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4 5.6l6.3 5.3C41.9 36.2 44 30.6 44 24c0-1.3-.1-2.3-.4-3.5z"/>
+                </svg>
+                <span>Continue with Google</span>
+              </a>
+
+              {/* Divider */}
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", margin: "16px 0" }}>
+                <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
+                <span style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>or</span>
+                <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
+              </div>
 
               {/* Form */}
               <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
