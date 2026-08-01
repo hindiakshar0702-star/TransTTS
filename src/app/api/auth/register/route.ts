@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { hashPassword, createUserSession } from "@/lib/auth";
 import { guard } from "@/lib/api-guard";
+import { validatePassword } from "@/lib/password";
 
 export const runtime = "nodejs";
 
@@ -23,9 +24,11 @@ export async function POST(req: NextRequest) {
     if (!EMAIL_RE.test(normEmail) || normEmail.length > 254) {
       return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
     }
-    // Upper bound caps scrypt work per request (DoS guard).
-    if (password.length < 8 || password.length > 200) {
-      return NextResponse.json({ error: "Password must be 8–200 characters." }, { status: 400 });
+    // Enforce the shared password policy (length + complexity + blocklist). The
+    // upper length bound also caps scrypt work per request (DoS guard).
+    const pw = validatePassword(password, normEmail);
+    if (!pw.ok) {
+      return NextResponse.json({ error: pw.errors[0], errors: pw.errors }, { status: 400 });
     }
     const safeName =
       typeof name === "string" && name.trim() ? name.trim().slice(0, 80) : null;
@@ -45,11 +48,18 @@ export async function POST(req: NextRequest) {
     const passwordHash = await hashPassword(password);
     const user = await prisma.user.create({
       data: { email: normEmail, name: safeName, passwordHash, provider: "credentials" },
-      select: { id: true, email: true, name: true, role: true, image: true, provider: true },
+      select: {
+        id: true, email: true, name: true, role: true,
+        image: true, provider: true, tokenVersion: true,
+      },
     });
 
-    await createUserSession({ sub: user.id, email: user.email, role: user.role, name: user.name });
-    return NextResponse.json({ user }, { status: 201 });
+    await createUserSession({
+      sub: user.id, email: user.email, role: user.role, name: user.name, tv: user.tokenVersion,
+    });
+    const { tokenVersion: _tv, ...safeUser } = user;
+    void _tv;
+    return NextResponse.json({ user: safeUser }, { status: 201 });
   } catch (error) {
     console.error("Register error:", error);
     return NextResponse.json({ error: "Registration failed. Please try again." }, { status: 500 });

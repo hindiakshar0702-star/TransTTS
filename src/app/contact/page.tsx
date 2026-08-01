@@ -3,6 +3,11 @@ import { useState } from "react";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
 import { useToast } from "@/components/Toast";
+import {
+  BuildingIcon, CheckCircleIcon, MicIcon, TargetIcon,
+  InfinityIcon, HeadphonesIcon, PlugIcon, ChartColumnIcon,
+  ShieldIcon, LockIcon, MailIcon, SendIcon, PhoneIcon, ArrowLeftIcon
+} from "@/components/Icons";
 
 export default function ContactPage() {
   const [formData, setFormData] = useState({
@@ -29,19 +34,32 @@ export default function ContactPage() {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
+  const benefits = [
+    { icon: <InfinityIcon size={20} color="#FF8000" />, title: "Unlimited Everything", desc: "No caps on transcriptions, translations, or TTS" },
+    { icon: <HeadphonesIcon size={20} color="#FF8000" />, title: "Custom Neural Voices", desc: "Train voices with your brand's personality" },
+    { icon: <PlugIcon size={20} color="#FF8000" />, title: "Full API Access", desc: "REST API for seamless integration" },
+    { icon: <ChartColumnIcon size={20} color="#FF8000" />, title: "Team Analytics", desc: "Usage tracking across your organization" },
+    { icon: <ShieldIcon size={20} color="#FF8000" />, title: "SLA & Support", desc: "99.9% uptime with dedicated account manager" },
+    { icon: <LockIcon size={20} color="#FF8000" />, title: "Data Privacy", desc: "SOC2 compliant, on-premise option available" },
+  ];
+
   return (
     <>
       <Navbar />
       <main className="app-page">
         <div className="container" style={{ maxWidth: 800 }}>
           <div className="app-header fade-in">
-            <h1>🏢 <span className="gradient-text">Contact Sales</span></h1>
+            <h1 style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <BuildingIcon size={32} color="#FF8000" /> <span className="gradient-text">Contact Sales</span>
+            </h1>
             <p>Get a custom Enterprise plan tailored for your team</p>
           </div>
 
           {submitted ? (
             <div className="glass-card fade-in" style={{ textAlign: "center", padding: "60px 32px" }}>
-              <div style={{ fontSize: "4rem", marginBottom: 16 }}>✅</div>
+              <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
+                <CheckCircleIcon size={64} color="#16a34a" />
+              </div>
               <h2 style={{ marginBottom: 12 }}>Thank You!</h2>
               <p style={{ color: "var(--text-dim)", marginBottom: 8, fontSize: "1.05rem" }}>
                 We&apos;ve received your inquiry and will get back to you within <strong>24 hours</strong>.
@@ -50,26 +68,25 @@ export default function ContactPage() {
                 Check your email at <strong>{formData.email}</strong> for confirmation.
               </p>
               <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-                <Link href="/pricing" className="btn btn-outline">← Back to Free Plan</Link>
-                <Link href="/transcribe" className="btn btn-primary">🎤 Start Transcribing</Link>
+                <Link href="/" className="btn btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <ArrowLeftIcon size={14} color="currentColor" /> Back to Home
+                </Link>
+                <Link href="/transcribe" className="btn btn-primary" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <MicIcon size={14} color="#0a0a0a" /> Start Transcribing
+                </Link>
               </div>
             </div>
           ) : (
             <>
               {/* Enterprise Benefits */}
               <div className="glass-card fade-in" style={{ marginBottom: 24 }}>
-                <h3 style={{ marginBottom: 16 }}>🎯 Enterprise Benefits</h3>
+                <h3 style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+                  <TargetIcon size={20} color="#FF8000" /> Enterprise Benefits
+                </h3>
                 <div className="enterprise-benefits">
-                  {[
-                    { icon: "♾️", title: "Unlimited Everything", desc: "No caps on transcriptions, translations, or TTS" },
-                    { icon: "🎧", title: "Custom Neural Voices", desc: "Train voices with your brand's personality" },
-                    { icon: "🔌", title: "Full API Access", desc: "REST API for seamless integration" },
-                    { icon: "📊", title: "Team Analytics", desc: "Usage tracking across your organization" },
-                    { icon: "🛡️", title: "SLA & Support", desc: "99.9% uptime with dedicated account manager" },
-                    { icon: "🔒", title: "Data Privacy", desc: "SOC2 compliant, on-premise option available" },
-                  ].map((b) => (
+                  {benefits.map((b) => (
                     <div key={b.title} className="benefit-item">
-                      <span style={{ fontSize: "1.3rem" }}>{b.icon}</span>
+                      <span style={{ display: "flex", alignItems: "center" }}>{b.icon}</span>
                       <div>
                         <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{b.title}</div>
                         <div style={{ fontSize: "0.8rem", color: "var(--text-dim)" }}>{b.desc}</div>
@@ -81,7 +98,9 @@ export default function ContactPage() {
 
               {/* Contact Form */}
               <form className="glass-card fade-in" onSubmit={handleSubmit}>
-                <h3 style={{ marginBottom: 20 }}>📬 Send Us a Message</h3>
+                <h3 style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
+                  <MailIcon size={20} color="#FF8000" /> Send Us a Message
+                </h3>
 
                 <div className="form-grid">
                   <div>
@@ -129,8 +148,8 @@ export default function ContactPage() {
                   </div>
                 </div>
 
-                <button type="submit" className="btn btn-primary btn-large" style={{ width: "100%", marginTop: 24 }}>
-                  📨 Send Message
+                <button type="submit" className="btn btn-primary btn-large" style={{ width: "100%", marginTop: 24, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                  <SendIcon size={16} color="#0a0a0a" /> Send Message
                 </button>
 
                 <p style={{ textAlign: "center", fontSize: "0.82rem", color: "var(--text-muted)", marginTop: 12 }}>
@@ -140,7 +159,9 @@ export default function ContactPage() {
 
               {/* Alternative contact */}
               <div className="glass-card fade-in" style={{ marginTop: 24, textAlign: "center" }}>
-                <h3 style={{ marginBottom: 12 }}>📞 Prefer to talk?</h3>
+                <h3 style={{ marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                  <PhoneIcon size={20} color="#FF8000" /> Prefer to talk?
+                </h3>
                 <p style={{ color: "var(--text-dim)", marginBottom: 4 }}>
                   Email us directly: <strong style={{ color: "var(--accent)" }}>enterprise@transtts.ai</strong>
                 </p>
@@ -150,7 +171,9 @@ export default function ContactPage() {
               </div>
 
               <div style={{ textAlign: "center", marginTop: 24 }}>
-                <Link href="/pricing" className="btn btn-ghost">← Back to Free Plan</Link>
+                <Link href="/" className="btn btn-ghost" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <ArrowLeftIcon size={14} color="currentColor" /> Back to Home
+                </Link>
               </div>
             </>
           )}

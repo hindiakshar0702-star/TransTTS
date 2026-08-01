@@ -5,6 +5,11 @@ import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { useToast } from "@/components/Toast";
 import { CheckCircleIcon, SparklesIcon } from "@/components/landing/Icons";
+import { validatePassword, passwordStrength } from "@/lib/password";
+import PasswordEyeToggle from "@/components/PasswordEyeToggle";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const STRENGTH_COLORS = ["#ef4444", "#f59e0b", "#eab308", "#84cc16", "#22c55e"];
 
 const OAUTH_ERRORS: Record<string, string> = {
   google_not_configured: "Google sign-in is not configured yet.",
@@ -22,6 +27,9 @@ function LoginContent() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const strength = passwordStrength(password);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -50,6 +58,18 @@ function LoginContent() {
       showToast("Please fill in all required fields.", "error");
       return;
     }
+    if (!EMAIL_RE.test(email.trim())) {
+      showToast("Enter a valid email address.", "error");
+      return;
+    }
+    // Enforce the password policy client-side on sign-up (server re-checks).
+    if (isSignUp) {
+      const pw = validatePassword(password, email.trim());
+      if (!pw.ok) {
+        showToast(pw.errors[0], "error");
+        return;
+      }
+    }
 
     setIsLoading(true);
     try {
@@ -71,7 +91,8 @@ function LoginContent() {
         isSignUp ? "Account created successfully!" : "Logged in successfully!",
         "success"
       );
-      router.push(redirectPath);
+      // New accounts land on the verification page; returning users go where they intended.
+      router.push(isSignUp ? "/verify" : redirectPath);
       router.refresh();
     } catch {
       showToast("Network error. Please try again.", "error");
@@ -207,20 +228,50 @@ function LoginContent() {
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
                     <label className="form-label" style={{ marginBottom: 0 }}>Password</label>
                     {!isSignUp && (
-                      <Link href="#" style={{ fontSize: "0.78rem", color: "var(--accent)", textDecoration: "none", fontWeight: 600 }}>
+                      <Link href="/forgot-password" style={{ fontSize: "0.78rem", color: "var(--accent)", textDecoration: "none", fontWeight: 600 }}>
                         Forgot?
                       </Link>
                     )}
                   </div>
-                  <input
-                    type="password"
-                    className="text-input"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    disabled={isLoading}
-                  />
+                  <div style={{ position: "relative" }}>
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      className="text-input"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      minLength={8}
+                      autoComplete={isSignUp ? "new-password" : "current-password"}
+                      style={{ paddingRight: "40px", width: "100%" }}
+                      disabled={isLoading}
+                    />
+                    <PasswordEyeToggle shown={showPassword} onToggle={() => setShowPassword((s) => !s)} disabled={isLoading} />
+                  </div>
+
+                  {/* Live strength meter — sign-up only. */}
+                  {isSignUp && password.length > 0 && (
+                    <div style={{ marginTop: "8px" }}>
+                      <div style={{ display: "flex", gap: "4px" }}>
+                        {[0, 1, 2, 3].map((i) => (
+                          <span
+                            key={i}
+                            style={{
+                              flex: 1,
+                              height: "4px",
+                              borderRadius: "2px",
+                              background: i < strength.score ? STRENGTH_COLORS[strength.score - 1] : "var(--border)",
+                              transition: "background 0.2s",
+                            }}
+                          />
+                        ))}
+                      </div>
+                      <span style={{ fontSize: "0.72rem", color: "var(--text-dim)", marginTop: "4px", display: "block" }}>
+                        Strength: <strong style={{ color: STRENGTH_COLORS[Math.max(0, strength.score - 1)] }}>{strength.label}</strong>
+                        <span style={{ marginLeft: "6px" }}>Use 8+ chars with upper, lower &amp; a number.</span>
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <button

@@ -8,6 +8,9 @@ export interface SessionUser {
   role: string;
   image: string | null;
   provider: string;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  phone: string | null;
 }
 
 /**

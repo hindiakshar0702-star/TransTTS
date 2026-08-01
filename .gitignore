@@ -58,3 +58,6 @@ prisma/dev.db-journal
 # local-only asset dumps (kept on disk, not committed)
 /icons
 /avatar
+
+# Local portable Postgres (dev only)
+.local-pg/

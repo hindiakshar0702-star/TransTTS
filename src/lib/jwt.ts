@@ -12,6 +12,7 @@ export interface SessionPayload {
   email: string;
   role: string; // "user" | "admin"
   name?: string | null;
+  tv?: number; // tokenVersion — see User.tokenVersion (session revocation)
 }
 
 const ALG = "HS256";
@@ -32,6 +33,7 @@ export async function signSession(payload: SessionPayload): Promise<string> {
     email: payload.email,
     role: payload.role,
     name: payload.name ?? null,
+    tv: payload.tv ?? 0,
   })
     .setProtectedHeader({ alg: ALG })
     .setSubject(payload.sub)
@@ -55,6 +57,7 @@ export async function verifySession(token: string): Promise<SessionPayload | nul
       email: payload.email,
       role: payload.role,
       name: typeof payload.name === "string" ? payload.name : null,
+      tv: typeof payload.tv === "number" ? payload.tv : 0,
     };
   } catch {
     return null;

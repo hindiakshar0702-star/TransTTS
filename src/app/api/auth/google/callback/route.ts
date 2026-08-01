@@ -83,7 +83,7 @@ export async function GET(req: NextRequest) {
       where: { email },
       update: { image: image ?? undefined },
       create: { email, name, image, provider: "google", role: "user" },
-      select: { id: true, email: true, name: true, role: true },
+      select: { id: true, email: true, name: true, role: true, tokenVersion: true },
     });
 
     // 4. Open the session on the redirect response itself.
@@ -92,6 +92,7 @@ export async function GET(req: NextRequest) {
       email: user.email,
       role: user.role,
       name: user.name,
+      tv: user.tokenVersion,
     });
     const res = NextResponse.redirect(new URL("/dashboard", base));
     res.cookies.set(SESSION_COOKIE, token, {

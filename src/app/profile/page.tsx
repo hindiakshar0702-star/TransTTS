@@ -1,5 +1,8 @@
 "use client";
 import { useState, useEffect, Suspense } from "react";
+import { useRouter } from "next/navigation";
+import { validatePassword } from "@/lib/password";
+import PasswordEyeToggle from "@/components/PasswordEyeToggle";
 import Sidebar from "@/components/Sidebar";
 import LanguageSelect from "@/components/LanguageSelect";
 import { useToast } from "@/components/Toast";
@@ -30,74 +33,151 @@ export default function ProfilePage() {
 function ProfileContent() {
   const [isAuth, setIsAuth] = useState(false);
   const { showToast } = useToast();
+  const router = useRouter();
+  const [loggingOutAll, setLoggingOutAll] = useState(false);
 
-  const [userName, setUserName] = useState("Google User");
-  const [userEmail, setUserEmail] = useState("googleuser@gmail.com");
+  const [userName, setUserName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
   const [userAvatar, setUserAvatar] = useState("");
-  const [userPhone, setUserPhone] = useState("+91 98765 43210");
-  const [userRole, setUserRole] = useState("Voice Content Creator");
-  const [userOrg, setUserOrg] = useState("TransTTS Studio");
-  const [userBio, setUserBio] = useState("Audio & speech enthusiast using TransTTS for multilingual dubbing and transcriptions.");
+  const [userPhone, setUserPhone] = useState("");
+  const [userRole, setUserRole] = useState("");
+  const [userOrg, setUserOrg] = useState("");
+  const [userBio, setUserBio] = useState("");
   const [defaultLang, setDefaultLang] = useState("hi");
   const [defaultVoice, setDefaultVoice] = useState("hi-female");
   const [autoSave, setAutoSave] = useState(true);
   const [confirmDetails, setConfirmDetails] = useState(true);
   const [twoFactor, setTwoFactor] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [currentPass, setCurrentPass] = useState("");
   const [newPass, setNewPass] = useState("");
   const [confirmPass, setConfirmPass] = useState("");
+  const [changingPass, setChangingPass] = useState(false);
+  const [showPasswords, setShowPasswords] = useState(false);
   const avatarFileRef = useRef<HTMLInputElement>(null);
 
+  // Load the persisted profile from the server (source of truth is the DB, not
+  // localStorage — so the Sidebar/session and this page stay in sync).
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      setIsAuth(true);
-      setUserName(localStorage.getItem("userName") || "Google User");
-      setUserEmail(localStorage.getItem("userEmail") || "googleuser@gmail.com");
-      setUserAvatar(localStorage.getItem("userAvatar") || "");
-      setUserPhone(localStorage.getItem("userPhone") || "+91 98765 43210");
-      setUserRole(localStorage.getItem("userRole") || "Voice Content Creator");
-      setUserOrg(localStorage.getItem("userOrg") || "TransTTS Studio");
-      setUserBio(localStorage.getItem("userBio") || "Audio & speech enthusiast using TransTTS for multilingual dubbing and transcriptions.");
-      setDefaultLang(localStorage.getItem("defaultLang") || "hi");
-      setDefaultVoice(localStorage.getItem("defaultVoice") || "hi-female");
-    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/profile", { cache: "no-store" });
+        if (res.ok) {
+          const { user } = await res.json();
+          if (!cancelled && user) {
+            setUserName(user.name || "");
+            setUserEmail(user.email || "");
+            setUserAvatar(user.image || "");
+            setUserPhone(user.phone || "");
+            setUserRole(user.jobTitle || "");
+            setUserOrg(user.organization || "");
+            setUserBio(user.bio || "");
+            setDefaultLang(user.defaultLang || "hi");
+            setDefaultVoice(user.defaultVoice || "hi-female");
+          }
+        }
+      } catch {
+        /* proxy redirects unauthenticated users to /login already */
+      } finally {
+        if (!cancelled) setIsAuth(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const handleChangePassword = (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentPass) {
       showToast("Please enter your current password", "error");
       return;
     }
-    if (newPass.length < 6) {
-      showToast("New password must be at least 6 characters", "error");
+    // Enforce the shared password policy client-side (server re-checks).
+    const pw = validatePassword(newPass, userEmail);
+    if (!pw.ok) {
+      showToast(pw.errors[0], "error");
       return;
     }
     if (newPass !== confirmPass) {
       showToast("New password and confirm password do not match", "error");
       return;
     }
-    showToast("Password updated successfully!", "success");
-    setCurrentPass("");
-    setNewPass("");
-    setConfirmPass("");
+    setChangingPass(true);
+    try {
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword: currentPass, newPassword: newPass }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(data.error || "Could not change password.", "error");
+        return;
+      }
+      showToast("Password updated. Other devices have been signed out.", "success");
+      setCurrentPass("");
+      setNewPass("");
+      setConfirmPass("");
+    } catch {
+      showToast("Network error. Please try again.", "error");
+    } finally {
+      setChangingPass(false);
+    }
+  };
+
+  // Revoke every session for this account (bumps User.tokenVersion server-side),
+  // then send the user back to /login since the current cookie is now dead too.
+  const handleLogoutAll = async () => {
+    if (!window.confirm("Log out of all devices? You'll need to sign in again everywhere.")) {
+      return;
+    }
+    setLoggingOutAll(true);
+    try {
+      const res = await fetch("/api/auth/logout-all", { method: "POST" });
+      if (!res.ok) {
+        showToast("Could not log out other sessions. Please try again.", "error");
+        setLoggingOutAll(false);
+        return;
+      }
+      showToast("Logged out of all devices.", "success");
+      router.push("/login");
+    } catch {
+      showToast("Network error. Please try again.", "error");
+      setLoggingOutAll(false);
+    }
   };
 
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    if (f.size > 5 * 1024 * 1024) {
-      showToast("Image size must be under 5MB", "error");
+    // ~2MB binary → the server caps the base64 payload at 3M chars.
+    if (f.size > 2 * 1024 * 1024) {
+      showToast("Image size must be under 2MB", "error");
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const result = reader.result as string;
-      setUserAvatar(result);
-      if (typeof window !== "undefined") {
-        localStorage.setItem("userAvatar", result);
-        window.dispatchEvent(new Event("profileUpdated"));
+      const prev = userAvatar;
+      setUserAvatar(result); // optimistic
+      try {
+        const res = await fetch("/api/profile", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: result }),
+        });
+        if (!res.ok) {
+          const { error } = await res.json().catch(() => ({ error: "" }));
+          setUserAvatar(prev); // roll back
+          showToast(error || "Could not update photo.", "error");
+          return;
+        }
         showToast("Profile photo updated!", "success");
+      } catch {
+        setUserAvatar(prev);
+        showToast("Network error. Please try again.", "error");
       }
     };
     reader.readAsDataURL(f);
@@ -111,19 +191,39 @@ function ProfileContent() {
     );
   }
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (typeof window !== "undefined") {
-      localStorage.setItem("userName", userName);
-      localStorage.setItem("userEmail", userEmail);
-      localStorage.setItem("userPhone", userPhone);
-      localStorage.setItem("userRole", userRole);
-      localStorage.setItem("userOrg", userOrg);
-      localStorage.setItem("userBio", userBio);
-      localStorage.setItem("defaultLang", defaultLang);
-      localStorage.setItem("defaultVoice", defaultVoice);
-      window.dispatchEvent(new Event("profileUpdated"));
+    if (!userName.trim()) {
+      showToast("Name cannot be empty", "error");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        // email/role are intentionally NOT sent — identity/privilege are
+        // fixed server-side and would be ignored anyway.
+        body: JSON.stringify({
+          name: userName,
+          phone: userPhone,
+          jobTitle: userRole,
+          organization: userOrg,
+          bio: userBio,
+          defaultLang,
+          defaultVoice,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(data.error || "Could not save profile.", "error");
+        return;
+      }
       showToast("Personal details saved successfully!", "success");
+    } catch {
+      showToast("Network error. Please try again.", "error");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -149,10 +249,11 @@ function ProfileContent() {
               type="button"
               className="btn btn-primary"
               onClick={handleSaveProfile}
-              style={{ display: "inline-flex", alignItems: "center", gap: 8, height: "44px", padding: "0 22px", fontWeight: 700 }}
+              disabled={saving}
+              style={{ display: "inline-flex", alignItems: "center", gap: 8, height: "44px", padding: "0 22px", fontWeight: 700, opacity: saving ? 0.6 : 1, cursor: saving ? "not-allowed" : "pointer" }}
             >
               <CheckIcon size={18} color="#0a0a0a" />
-              <span>Save Profile</span>
+              <span>{saving ? "Saving…" : "Save Profile"}</span>
             </button>
 
 
@@ -287,9 +388,10 @@ function ProfileContent() {
                   type="email"
                   className="text-input"
                   value={userEmail}
-                  onChange={(e) => setUserEmail(e.target.value)}
+                  readOnly
+                  title="Email is your login identity and cannot be changed here."
                   placeholder="Enter your email address"
-                  required
+                  style={{ opacity: 0.7, cursor: "not-allowed" }}
                 />
               </div>
 
@@ -372,7 +474,7 @@ function ProfileContent() {
               <button
                 type="submit"
                 className="btn btn-primary"
-                disabled={!confirmDetails}
+                disabled={!confirmDetails || saving}
                 style={{
                   height: "44px",
                   marginTop: "4px",
@@ -383,13 +485,13 @@ function ProfileContent() {
                   alignItems: "center",
                   justifyContent: "center",
                   gap: 8,
-                  opacity: confirmDetails ? 1 : 0.6,
-                  cursor: confirmDetails ? "pointer" : "not-allowed",
+                  opacity: confirmDetails && !saving ? 1 : 0.6,
+                  cursor: confirmDetails && !saving ? "pointer" : "not-allowed",
                   boxShadow: confirmDetails ? "0 4px 14px rgba(255,128,0,0.22)" : "none"
                 }}
               >
                 <CheckIcon size={18} color="#0a0a0a" />
-                <span>Save Personal Details</span>
+                <span>{saving ? "Saving…" : "Save Personal Details"}</span>
               </button>
 
             </form>
@@ -506,6 +608,43 @@ function ProfileContent() {
                 </div>
               </div>
 
+              {/* Log out of all devices — revokes every active session */}
+              <div style={{ padding: "14px 16px", borderRadius: "var(--radius-sm)", background: "var(--glass2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "20px", flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: "0.88rem" }}>Log Out Everywhere</div>
+                  <div style={{ fontSize: "0.76rem", color: "var(--text-dim)", marginTop: "2px" }}>
+                    Sign out of every device and browser, including this one
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleLogoutAll}
+                  disabled={loggingOutAll}
+                  style={{
+                    height: "38px",
+                    padding: "0 18px",
+                    borderRadius: "100px",
+                    fontWeight: 700,
+                    fontSize: "0.82rem",
+                    background: "transparent",
+                    color: "#ef4444",
+                    border: "1px solid #ef4444",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    cursor: loggingOutAll ? "not-allowed" : "pointer",
+                    opacity: loggingOutAll ? 0.6 : 1,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {loggingOutAll ? (
+                    <><div className="spinner" style={{ width: 14, height: 14 }} />Logging out…</>
+                  ) : (
+                    <><LockIcon size={14} color="currentColor" /><span>Log Out All Devices</span></>
+                  )}
+                </button>
+              </div>
+
               {/* Change Password Sub-form */}
               <form onSubmit={handleChangePassword} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
                 <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
@@ -514,42 +653,63 @@ function ProfileContent() {
 
                 <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label" style={{ fontWeight: 700, fontSize: "0.8rem" }}>Current Password</label>
-                  <input
-                    type="password"
-                    className="text-input"
-                    value={currentPass}
-                    onChange={(e) => setCurrentPass(e.target.value)}
-                    placeholder="••••••••"
-                  />
+                  <div style={{ position: "relative" }}>
+                    <input
+                      type={showPasswords ? "text" : "password"}
+                      className="text-input"
+                      value={currentPass}
+                      onChange={(e) => setCurrentPass(e.target.value)}
+                      placeholder="••••••••"
+                      autoComplete="current-password"
+                      disabled={changingPass}
+                      style={{ paddingRight: "40px", width: "100%" }}
+                    />
+                    <PasswordEyeToggle shown={showPasswords} onToggle={() => setShowPasswords((s) => !s)} />
+                  </div>
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                   <div className="form-group" style={{ margin: 0 }}>
                     <label className="form-label" style={{ fontWeight: 700, fontSize: "0.8rem" }}>New Password</label>
-                    <input
-                      type="password"
-                      className="text-input"
-                      value={newPass}
-                      onChange={(e) => setNewPass(e.target.value)}
-                      placeholder="••••••••"
-                    />
+                    <div style={{ position: "relative" }}>
+                      <input
+                        type={showPasswords ? "text" : "password"}
+                        className="text-input"
+                        value={newPass}
+                        onChange={(e) => setNewPass(e.target.value)}
+                        placeholder="••••••••"
+                        autoComplete="new-password"
+                        minLength={8}
+                        disabled={changingPass}
+                        style={{ paddingRight: "40px", width: "100%" }}
+                      />
+                      <PasswordEyeToggle shown={showPasswords} onToggle={() => setShowPasswords((s) => !s)} />
+                    </div>
                   </div>
 
                   <div className="form-group" style={{ margin: 0 }}>
                     <label className="form-label" style={{ fontWeight: 700, fontSize: "0.8rem" }}>Confirm Password</label>
-                    <input
-                      type="password"
-                      className="text-input"
-                      value={confirmPass}
-                      onChange={(e) => setConfirmPass(e.target.value)}
-                      placeholder="••••••••"
-                    />
+                    <div style={{ position: "relative" }}>
+                      <input
+                        type={showPasswords ? "text" : "password"}
+                        className="text-input"
+                        value={confirmPass}
+                        onChange={(e) => setConfirmPass(e.target.value)}
+                        placeholder="••••••••"
+                        autoComplete="new-password"
+                        minLength={8}
+                        disabled={changingPass}
+                        style={{ paddingRight: "40px", width: "100%" }}
+                      />
+                      <PasswordEyeToggle shown={showPasswords} onToggle={() => setShowPasswords((s) => !s)} />
+                    </div>
                   </div>
                 </div>
 
                 <button
                   type="submit"
                   className="btn btn-secondary"
+                  disabled={changingPass}
                   style={{
                     height: "40px",
                     marginTop: "4px",
@@ -559,11 +719,16 @@ function ProfileContent() {
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    gap: 6
+                    gap: 6,
+                    opacity: changingPass ? 0.6 : 1,
+                    cursor: changingPass ? "not-allowed" : "pointer",
                   }}
                 >
-                  <LockIcon size={14} color="currentColor" />
-                  <span>Update Password</span>
+                  {changingPass ? (
+                    <><div className="spinner" style={{ width: 14, height: 14 }} />Updating…</>
+                  ) : (
+                    <><LockIcon size={14} color="currentColor" /><span>Update Password</span></>
+                  )}
                 </button>
               </form>
             </div>

@@ -58,6 +58,9 @@ export interface SessionUser {
   role: string;
   image: string | null;
   provider: string;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  phone: string | null;
 }
 
 /**
@@ -75,7 +78,33 @@ export async function getSessionUser(): Promise<SessionUser | null> {
 
   const user = await prisma.user.findUnique({
     where: { id: payload.sub },
-    select: { id: true, email: true, name: true, role: true, image: true, provider: true },
+    select: {
+      id: true, email: true, name: true, role: true,
+      image: true, provider: true, tokenVersion: true,
+      emailVerified: true, phoneVerified: true, phone: true,
+    },
   });
-  return user;
+  if (!user) return null;
+
+  // Session revocation: a stale token version means the password was reset or
+  // the user chose "log out everywhere" after this token was issued. Reject it.
+  if ((payload.tv ?? 0) !== user.tokenVersion) return null;
+
+  const { tokenVersion: _tv, ...safe } = user;
+  void _tv;
+  return safe;
+}
+
+/**
+ * Invalidate every existing session for a user (password reset / log-out-all)
+ * by bumping the token version. Returns the new version so the caller can mint a
+ * fresh session that survives. Node-only (prisma) — never call from middleware.
+ */
+export async function bumpTokenVersion(userId: string): Promise<number> {
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: { tokenVersion: { increment: 1 } },
+    select: { tokenVersion: true },
+  });
+  return updated.tokenVersion;
 }

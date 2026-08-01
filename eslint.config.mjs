@@ -29,6 +29,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vendored/generated static assets (e.g. the rnnoise WASM audio worklet) —
+    // not app source, and not authored against the Next/TS ruleset.
+    "public/**",
+    // Standalone Node CommonJS utility scripts (require()/module are correct here).
+    "scripts/**",
   ]),
 ]);
 

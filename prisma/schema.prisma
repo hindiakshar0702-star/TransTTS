@@ -19,9 +19,66 @@ model User {
   // "credentials" | "google" — how the account first signed up.
   provider     String   @default("credentials")
   image        String?
+
+  // Independent verification flags — a user may verify email, phone, both, or
+  // neither. Never authorization-bearing on their own; gate features as needed.
+  emailVerified Boolean @default(false)
+  phoneVerified Boolean @default(false)
+
+  // Bumped on password reset / "log out everywhere". Sessions carry this value
+  // in their JWT; getSessionUser rejects any token whose value is stale, which
+  // invalidates every previously-issued session at once.
+  tokenVersion Int      @default(0)
+
+  // Editable profile fields (all user-controlled, never authorization-bearing).
+  // Phone is unique when set (nullable — Postgres allows many NULLs) and stored
+  // in E.164 format; ownership is proven via the phoneVerified flag + OTP.
+  phone        String?  @unique
+  jobTitle     String?
+  organization String?
+  bio          String?
+  defaultLang  String?
+  defaultVoice String?
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   jobs         Job[]
+  resetTokens  PasswordResetToken[]
+  otpCodes     OtpCode[]
+}
+
+model OtpCode {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // "EMAIL" | "MOBILE" — enforced in app layer (matches role/provider style).
+  type      String
+  // Destination the code was sent to: email address or E.164 phone number.
+  target    String
+  // Only the SHA-256 hash of the 6-digit code is stored — never the plaintext.
+  otpHash   String
+  expiresAt DateTime
+  // Failed verification attempts; the code is invalidated past the max.
+  attempts  Int      @default(0)
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([target, type])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // We store ONLY the SHA-256 hash of the token; the raw token lives only in the
+  // emailed link. A DB leak therefore cannot be used to reset anyone's password.
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model Job {

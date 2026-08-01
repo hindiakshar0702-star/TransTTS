@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./landing.css";
 import { ToastProvider } from "@/components/Toast";
 import { Analytics } from "@vercel/analytics/react";
 import Script from "next/script";
@@ -8,6 +9,11 @@ export const metadata: Metadata = {
   title: "TransTTS AI — Transcribe, Translate & Generate Voice",
   description:
     "AI-powered platform using OpenAI Whisper to transcribe audio/video, translate to Hindi & 99+ languages, and generate natural AI voices.",
+  icons: {
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+    apple: "/favicon.svg",
+  },
   other: {
     // Dynamically support Monetag verification if provided
     ...(process.env.NEXT_PUBLIC_MONETAG_VERIFICATION

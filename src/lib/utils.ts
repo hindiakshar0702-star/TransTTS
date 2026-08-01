@@ -1,3 +1,7 @@
+export function cn(...inputs: (string | undefined | null | false)[]) {
+  return inputs.filter(Boolean).join(" ");
+}
+
 export function generateId(): string {
   return crypto.randomUUID();
 }
@@ -30,33 +34,33 @@ export const SUPPORTED_VIDEO = [
 
 export const SUPPORTED_TYPES = [...SUPPORTED_AUDIO, ...SUPPORTED_VIDEO];
 
-export const LANGUAGES: Record<string, { name: string; flag: string; code: string }> = {
-  auto: { name: "Auto Detect", flag: "🌐", code: "auto" },
-  hi: { name: "Hindi", flag: "🇮🇳", code: "hi" },
-  en: { name: "English", flag: "🇺🇸", code: "en" },
-  es: { name: "Spanish", flag: "🇪🇸", code: "es" },
-  fr: { name: "French", flag: "🇫🇷", code: "fr" },
-  de: { name: "German", flag: "🇩🇪", code: "de" },
-  ja: { name: "Japanese", flag: "🇯🇵", code: "ja" },
-  zh: { name: "Chinese", flag: "🇨🇳", code: "zh" },
-  ar: { name: "Arabic", flag: "🇸🇦", code: "ar" },
-  pt: { name: "Portuguese", flag: "🇧🇷", code: "pt" },
-  ko: { name: "Korean", flag: "🇰🇷", code: "ko" },
-  it: { name: "Italian", flag: "🇮🇹", code: "it" },
-  ru: { name: "Russian", flag: "🇷🇺", code: "ru" },
-  tr: { name: "Turkish", flag: "🇹🇷", code: "tr" },
-  nl: { name: "Dutch", flag: "🇳🇱", code: "nl" },
-  pl: { name: "Polish", flag: "🇵🇱", code: "pl" },
-  sv: { name: "Swedish", flag: "🇸🇪", code: "sv" },
-  th: { name: "Thai", flag: "🇹🇭", code: "th" },
-  vi: { name: "Vietnamese", flag: "🇻🇳", code: "vi" },
-  id: { name: "Indonesian", flag: "🇮🇩", code: "id" },
-  bn: { name: "Bengali", flag: "🇧🇩", code: "bn" },
-  ta: { name: "Tamil", flag: "🇮🇳", code: "ta" },
-  te: { name: "Telugu", flag: "🇮🇳", code: "te" },
-  mr: { name: "Marathi", flag: "🇮🇳", code: "mr" },
-  gu: { name: "Gujarati", flag: "🇮🇳", code: "gu" },
-  ur: { name: "Urdu", flag: "🇵🇰", code: "ur" },
+export const LANGUAGES: Record<string, { name: string; flag: string; flagCode?: string; code: string }> = {
+  auto: { name: "Auto Detect", flag: "🌐", flagCode: "un", code: "auto" },
+  hi: { name: "Hindi", flag: "🇮🇳", flagCode: "in", code: "hi" },
+  en: { name: "English", flag: "🇺🇸", flagCode: "us", code: "en" },
+  es: { name: "Spanish", flag: "🇪🇸", flagCode: "es", code: "es" },
+  fr: { name: "French", flag: "🇫🇷", flagCode: "fr", code: "fr" },
+  de: { name: "German", flag: "🇩🇪", flagCode: "de", code: "de" },
+  ja: { name: "Japanese", flag: "🇯🇵", flagCode: "jp", code: "ja" },
+  zh: { name: "Chinese", flag: "🇨🇳", flagCode: "cn", code: "zh" },
+  ar: { name: "Arabic", flag: "🇸🇦", flagCode: "sa", code: "ar" },
+  pt: { name: "Portuguese", flag: "🇧🇷", flagCode: "br", code: "pt" },
+  ko: { name: "Korean", flag: "🇰🇷", flagCode: "kr", code: "ko" },
+  it: { name: "Italian", flag: "🇮🇹", flagCode: "it", code: "it" },
+  ru: { name: "Russian", flag: "🇷🇺", flagCode: "ru", code: "ru" },
+  tr: { name: "Turkish", flag: "🇹🇷", flagCode: "tr", code: "tr" },
+  nl: { name: "Dutch", flag: "🇳🇱", flagCode: "nl", code: "nl" },
+  pl: { name: "Polish", flag: "🇵🇱", flagCode: "pl", code: "pl" },
+  sv: { name: "Swedish", flag: "🇸🇪", flagCode: "se", code: "sv" },
+  th: { name: "Thai", flag: "🇹🇭", flagCode: "th", code: "th" },
+  vi: { name: "Vietnamese", flag: "🇻🇳", flagCode: "vn", code: "vi" },
+  id: { name: "Indonesian", flag: "🇮🇩", flagCode: "id", code: "id" },
+  bn: { name: "Bengali", flag: "🇧🇩", flagCode: "bd", code: "bn" },
+  ta: { name: "Tamil", flag: "🇮🇳", flagCode: "in", code: "ta" },
+  te: { name: "Telugu", flag: "🇮🇳", flagCode: "in", code: "te" },
+  mr: { name: "Marathi", flag: "🇮🇳", flagCode: "in", code: "mr" },
+  gu: { name: "Gujarati", flag: "🇮🇳", flagCode: "in", code: "gu" },
+  ur: { name: "Urdu", flag: "🇵🇰", flagCode: "pk", code: "ur" },
 };
 
 export const TTS_VOICES = [
