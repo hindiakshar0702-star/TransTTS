@@ -123,11 +123,12 @@ export default function DashboardPage() {
           <p>Monitor your speech tasks, usage limits, and account history</p>
         </div>
 
-        {/* Dashboard Bento Grid */}
-        <div className="fade-in" style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: "20px", marginBottom: "28px" }}>
-          
-          {/* Bento Card 1: Monthly Usage Limits (spans 5 cols) */}
-          <div className="glass-card" style={{ gridColumn: "span 5", padding: "24px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+        {/* Top bento row: usage + quick launch. clamp()-based auto-fit → reflows
+            to a single column on phones, two cards side by side on wider screens. */}
+        <div className="fade-in dashboard-bento-top">
+
+          {/* Bento Card 1: Monthly Usage Limits */}
+          <div className="glass-card" style={{ padding: "24px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                 <h3 style={{ fontSize: "1.05rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
@@ -172,10 +173,10 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Bento Card 2: Quick Launch Tools (spans 7 cols) */}
-          <div className="glass-card" style={{ gridColumn: "span 7", padding: "24px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+          {/* Bento Card 2: Quick Launch Tools */}
+          <div className="glass-card" style={{ padding: "24px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
             <h3 style={{ fontSize: "1.05rem", fontWeight: 700, marginBottom: "16px" }}>Quick Launch Tools</h3>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "14px" }}>
+            <div className="quick-launch-tools">
               
               <div className="glass-card" style={{ padding: "18px 14px", cursor: "pointer", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", background: "var(--glass2)", border: "1px solid var(--border)" }} onClick={() => router.push("/transcribe")}>
                 <div style={{ marginBottom: "8px" }}><MicIcon size={26} color="#FF8000" /></div>
@@ -198,24 +199,26 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Bento Row 2: Stats summary cards (3 cols each) */}
-          <div className="stat-card" style={{ gridColumn: "span 3" }}>
+        </div>
+
+        {/* Stats summary cards — clamp() auto-fit, reflows across all devices */}
+        <div className="fade-in dashboard-stats">
+          <div className="stat-card">
             <div className="stat-number">{stats.total}</div>
             <div className="stat-title">Total Jobs</div>
           </div>
-          <div className="stat-card" style={{ gridColumn: "span 3" }}>
+          <div className="stat-card">
             <div className="stat-number">{stats.transcriptions}</div>
             <div className="stat-title">Transcriptions</div>
           </div>
-          <div className="stat-card" style={{ gridColumn: "span 3" }}>
+          <div className="stat-card">
             <div className="stat-number">{stats.translations}</div>
             <div className="stat-title">Translations</div>
           </div>
-          <div className="stat-card" style={{ gridColumn: "span 3" }}>
+          <div className="stat-card">
             <div className="stat-number">{stats.ttsGenerations}</div>
             <div className="stat-title">Voice Generated</div>
           </div>
-
         </div>
 
         {/* Filter bar */}

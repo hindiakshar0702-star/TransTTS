@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useToast } from "@/components/Toast";
 import { useSession, logout } from "@/lib/useSession";
-import { RadioIcon, MicIcon, GlobeIcon, VolumeIcon, ArrowUpRightIcon } from "@/components/landing/Icons";
+import { RadioIcon, MicIcon, GlobeIcon, VolumeIcon } from "@/components/landing/Icons";
 
 import Logo from "@/components/Logo";
 
@@ -48,21 +48,12 @@ export default function Navbar() {
           ))}
         </ul>
 
-        {/* Right Action Group: Sign Out or Saffron CTA Pill */}
+        {/* Right Action Group: Sign Out only when authenticated */}
         <div>
-          {isLoggedIn ? (
+          {isLoggedIn && (
             <button onClick={handleSignOut} className="btn btn-danger btn-sm">
               Sign Out
             </button>
-          ) : (
-            <div className="landing-nav-cta-group">
-              <Link href="/transcribe" className="landing-nav-cta">
-                Start Free
-              </Link>
-              <Link href="/transcribe" className="landing-nav-arrow-btn" aria-label="Open TransTTS">
-                <ArrowUpRightIcon size={18} color="#ffffff" />
-              </Link>
-            </div>
           )}
         </div>
       </div>

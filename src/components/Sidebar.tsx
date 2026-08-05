@@ -1,8 +1,9 @@
 "use client";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/Toast";
 import { useSession, logout } from "@/lib/useSession";
-import { HomeIcon, RadioIcon, MicIcon, GlobeIcon, VolumeIcon, UserIcon, LogOutIcon, SettingsIcon } from "@/components/Icons";
+import { HomeIcon, RadioIcon, MicIcon, GlobeIcon, VolumeIcon, UserIcon, LogOutIcon, SettingsIcon, MenuIcon, XIcon } from "@/components/Icons";
 import Logo from "@/components/Logo";
 
 interface SidebarProps {
@@ -12,6 +13,7 @@ interface SidebarProps {
 export default function Sidebar({ active }: SidebarProps) {
   const router = useRouter();
   const { showToast } = useToast();
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const { user } = useSession();
   const userName = user?.name || user?.email?.split("@")[0] || "User";
@@ -25,22 +27,55 @@ export default function Sidebar({ active }: SidebarProps) {
     router.refresh();
   };
 
+  // Navigate and always close the mobile drawer.
+  const go = (href: string) => {
+    router.push(href);
+    setDrawerOpen(false);
+  };
+
   const navItems = [
-    { id: "dashboard", href: "/dashboard", label: "Dashboard", icon: HomeIcon },
-    { id: "record", href: "/record", label: "Voice Recorder", icon: RadioIcon },
-    { id: "transcribe", href: "/transcribe", label: "Transcribe", icon: MicIcon },
-    { id: "translate", href: "/translate", label: "Translate", icon: GlobeIcon },
-    { id: "tts", href: "/tts", label: "Voice Generator", icon: VolumeIcon },
-    { id: "settings", href: "/settings", label: "Settings", icon: SettingsIcon },
+    { id: "dashboard", href: "/dashboard", label: "Dashboard", short: "Home", icon: HomeIcon },
+    { id: "record", href: "/record", label: "Voice Recorder", short: "Record", icon: RadioIcon },
+    { id: "transcribe", href: "/transcribe", label: "Transcribe", short: "Text", icon: MicIcon },
+    { id: "translate", href: "/translate", label: "Translate", short: "Translate", icon: GlobeIcon },
+    { id: "tts", href: "/tts", label: "Voice Generator", short: "Voice", icon: VolumeIcon },
+    { id: "settings", href: "/settings", label: "Settings", short: "Settings", icon: SettingsIcon },
   ];
+  // Bottom tab bar shows the 5 primary tools; Settings lives in the drawer.
+  const bottomTabItems = navItems.filter((i) => i.id !== "settings");
 
   return (
-    <aside className="dashboard-sidebar">
-      {/* Brand Header */}
-      <div style={{ padding: "4px 8px" }}>
-        <Logo height={32} variant="dark" href="/" />
+    <>
+      {/* Mobile top bar — hamburger opens the drawer (mobile only, hidden on desktop) */}
+      <div className="mobile-topbar">
+        <button
+          type="button"
+          className="mobile-hamburger"
+          onClick={() => setDrawerOpen(true)}
+          aria-label="Open navigation menu"
+        >
+          <MenuIcon size={22} color="currentColor" />
+        </button>
+        <Logo height={24} variant="dark" href="/" />
       </div>
-      
+
+      {/* Drawer backdrop (mobile only, only when open) */}
+      {drawerOpen && <div className="sidebar-backdrop" onClick={() => setDrawerOpen(false)} />}
+
+      <aside className={`dashboard-sidebar ${drawerOpen ? "open" : ""}`}>
+      {/* Brand Header + mobile drawer close */}
+      <div className="sidebar-brand-row" style={{ padding: "4px 8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <Logo height={32} variant="dark" href="/" />
+        <button
+          type="button"
+          className="sidebar-drawer-close"
+          onClick={() => setDrawerOpen(false)}
+          aria-label="Close menu"
+        >
+          <XIcon size={20} color="currentColor" />
+        </button>
+      </div>
+
       {/* Navigation Menu */}
       <nav className="sidebar-menu">
         <div className="sidebar-menu-label">Main Navigation</div>
@@ -48,10 +83,10 @@ export default function Sidebar({ active }: SidebarProps) {
           const Icon = item.icon;
           const isActive = active === item.id;
           return (
-            <button 
+            <button
               key={item.id}
-              className={`sidebar-item ${isActive ? "active" : ""}`} 
-              onClick={() => router.push(item.href)}
+              className={`sidebar-item ${isActive ? "active" : ""}`}
+              onClick={() => go(item.href)}
             >
               <span className="sidebar-item-icon">
                 <Icon size={18} color="currentColor" />
@@ -62,9 +97,10 @@ export default function Sidebar({ active }: SidebarProps) {
           );
         })}
       </nav>
-      
+
       {/* User Profile & Sign Out Footer */}
       <div className="sidebar-footer">
+        {/* User profile card hidden for now — /profile page stays; re-add this block to restore.
         <div
           className={`sidebar-profile-card ${active === "profile" ? "active" : ""}`}
           onClick={() => router.push("/profile")}
@@ -91,13 +127,38 @@ export default function Sidebar({ active }: SidebarProps) {
             <span className="sidebar-email">{userEmail}</span>
           </div>
         </div>
+        */}
 
-
+        <button className="sidebar-home-btn" onClick={() => go("/")}>
+          <HomeIcon size={16} color="currentColor" />
+          <span>Back to Home</span>
+        </button>
         <button className="sidebar-logout-btn" onClick={handleLogout}>
           <LogOutIcon size={16} color="currentColor" />
           <span>Sign Out</span>
         </button>
       </div>
     </aside>
+
+      {/* Bottom tab bar — app-like primary nav (mobile only, hidden on desktop) */}
+      <nav className="bottom-tab-bar">
+        {bottomTabItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = active === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className={`bottom-tab ${isActive ? "active" : ""}`}
+              onClick={() => router.push(item.href)}
+              aria-label={item.label}
+            >
+              <Icon size={20} color="currentColor" />
+              <span>{item.short}</span>
+            </button>
+          );
+        })}
+      </nav>
+    </>
   );
 }

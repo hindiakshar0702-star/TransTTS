@@ -3,10 +3,37 @@ import { useState, useEffect } from "react";
 import Sidebar from "@/components/Sidebar";
 import { useToast } from "@/components/Toast";
 import { usePersistedState, clearPersistedState } from "@/hooks/usePersistedState";
+import { getHistory, type HistoryItem } from "@/lib/history";
 import {
   SettingsIcon, VolumeIcon, ShieldIcon,
-  SaveIcon, RefreshIcon, TrashIcon, LockIcon
+  SaveIcon, RefreshIcon, TrashIcon, LockIcon,
+  DownloadIcon, MailIcon, GlobeIcon, ClockIcon
 } from "@/components/Icons";
+
+/** Reusable orange toggle switch matching the settings card pattern. */
+function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label style={{ position: "relative", display: "inline-block", width: "44px", height: "24px", cursor: "pointer", flexShrink: 0 }}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ opacity: 0, width: 0, height: 0 }}
+      />
+      <span style={{
+        position: "absolute", cursor: "pointer", top: 0, left: 0, right: 0, bottom: 0,
+        backgroundColor: checked ? "#FF8000" : "#ccc",
+        transition: ".3s", borderRadius: "34px"
+      }}>
+        <span style={{
+          position: "absolute", height: "18px", width: "18px", left: "3px", bottom: "3px",
+          backgroundColor: "white", transition: ".3s", borderRadius: "50%",
+          transform: checked ? "translateX(20px)" : "translateX(0)"
+        }} />
+      </span>
+    </label>
+  );
+}
 
 export default function SettingsPage() {
   const [isAuth, setIsAuth] = useState(false);
@@ -21,11 +48,49 @@ export default function SettingsPage() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [themeMode, setThemeMode] = usePersistedState("settings_theme", "light");
 
+  // Voice & audio extend
+  const [outputFormat, setOutputFormat] = usePersistedState("settings_output_format", "mp3");
+  // Data privacy extend
+  const [autoDeleteDays, setAutoDeleteDays] = usePersistedState("settings_auto_delete_days", "never");
+  // Notifications
+  const [notifyTaskComplete, setNotifyTaskComplete] = usePersistedState("settings_notify_task", false);
+  const [notifyWeeklySummary, setNotifyWeeklySummary] = usePersistedState("settings_notify_weekly", false);
+  // Interface / accessibility
+  const [uiLanguage, setUiLanguage] = usePersistedState("settings_ui_language", "en");
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       setIsAuth(true);
     }
   }, []);
+
+  // Apply theme preference to <html data-theme>. "auto" follows OS preference.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const root = document.documentElement;
+    const resolved =
+      themeMode === "auto"
+        ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+        : themeMode;
+    root.setAttribute("data-theme", resolved);
+  }, [themeMode]);
+
+  // Prune history older than the auto-delete window on load / when the setting changes.
+  useEffect(() => {
+    if (typeof window === "undefined" || autoDeleteDays === "never") return;
+    const days = parseInt(autoDeleteDays, 10);
+    if (Number.isNaN(days)) return;
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+    try {
+      const raw = localStorage.getItem("transtts_history");
+      if (!raw) return;
+      const items: HistoryItem[] = JSON.parse(raw);
+      const kept = items.filter((h) => h.timestamp >= cutoff);
+      if (kept.length !== items.length) {
+        localStorage.setItem("transtts_history", JSON.stringify(kept));
+      }
+    } catch { /* ignore */ }
+  }, [autoDeleteDays]);
 
   if (!isAuth) {
     return (
@@ -46,7 +111,48 @@ export default function SettingsPage() {
     setAutoSaveHistory(true);
     setApiKey("");
     setThemeMode("light");
+    setOutputFormat("mp3");
+    setAutoDeleteDays("never");
+    setNotifyTaskComplete(false);
+    setNotifyWeeklySummary(false);
+    setUiLanguage("en");
     showToast("Settings reset to defaults.", "info");
+  };
+
+  const downloadBlob = (content: string, filename: string, mime: string) => {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const historyToCsv = (items: HistoryItem[]): string => {
+    const cols = ["id", "type", "title", "timestamp", "status", "language", "duration", "sourceLang", "targetLang", "voice"];
+    const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const rows = items.map((h) =>
+      [h.id, h.type, h.title, new Date(h.timestamp).toISOString(), h.status,
+       h.data.language, h.data.duration, h.data.sourceLang, h.data.targetLang, h.data.voice].map(esc).join(",")
+    );
+    return [cols.join(","), ...rows].join("\n");
+  };
+
+  const handleExportData = (format: "json" | "csv") => {
+    const items = getHistory();
+    if (items.length === 0) {
+      showToast("No history to export yet.", "info");
+      return;
+    }
+    if (!confirm(`Export ${items.length} history item(s) as ${format.toUpperCase()}? The file downloads to your device.`)) return;
+    const stamp = new Date().toISOString().slice(0, 10);
+    if (format === "json") {
+      downloadBlob(JSON.stringify(items, null, 2), `transtts-data-${stamp}.json`, "application/json");
+    } else {
+      downloadBlob(historyToCsv(items), `transtts-data-${stamp}.csv`, "text/csv");
+    }
+    showToast(`Data exported as ${format.toUpperCase()}.`, "success");
   };
 
   const handleClearAllData = () => {
@@ -85,7 +191,7 @@ export default function SettingsPage() {
               <span>AI Speech &amp; Voice Defaults</span>
             </h3>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
+            <div className="settings-grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
 
               {/* Default Voice */}
               <div>
@@ -127,6 +233,23 @@ export default function SettingsPage() {
                   onChange={(e) => setDefaultSpeed(parseFloat(e.target.value))}
                   style={{ width: "100%", marginTop: "8px", accentColor: "#FF8000" }}
                 />
+              </div>
+
+              {/* Default Output Format */}
+              <div>
+                <label className="form-label" style={{ marginBottom: "6px", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)" }}>
+                  Default Output Format
+                </label>
+                <select
+                  className="select-input"
+                  value={outputFormat}
+                  onChange={(e) => setOutputFormat(e.target.value)}
+                  style={{ height: "42px", fontSize: "0.88rem", borderRadius: "10px" }}
+                >
+                  <option value="mp3">MP3 (smaller, universal)</option>
+                  <option value="wav">WAV (lossless, larger)</option>
+                  <option value="ogg">OGG (open, compressed)</option>
+                </select>
               </div>
 
             </div>
@@ -229,6 +352,51 @@ export default function SettingsPage() {
               </label>
             </div>
 
+            {/* Auto-Delete History Window */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px", paddingTop: "16px", borderTop: "1px dashed var(--border)" }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "var(--text)" }}>Auto-Delete History</div>
+                <div style={{ fontSize: "0.78rem", color: "var(--text-dim)" }}>Automatically remove saved history items older than the selected window</div>
+              </div>
+              <select
+                className="select-input"
+                value={autoDeleteDays}
+                onChange={(e) => setAutoDeleteDays(e.target.value)}
+                style={{ height: "40px", width: "150px", fontSize: "0.85rem", borderRadius: "10px" }}
+              >
+                <option value="7">After 7 days</option>
+                <option value="30">After 30 days</option>
+                <option value="90">After 90 days</option>
+                <option value="never">Never</option>
+              </select>
+            </div>
+
+            {/* Export My Data */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px", paddingTop: "16px", borderTop: "1px dashed var(--border)" }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "var(--text)" }}>Export My Data</div>
+                <div style={{ fontSize: "0.78rem", color: "var(--text-dim)" }}>Download your task history &amp; audio metadata to your device</div>
+              </div>
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => handleExportData("json")}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, height: "36px", borderRadius: "10px", fontSize: "0.82rem" }}
+                >
+                  <DownloadIcon size={14} color="currentColor" /> JSON
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => handleExportData("csv")}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, height: "36px", borderRadius: "10px", fontSize: "0.82rem" }}
+                >
+                  <DownloadIcon size={14} color="currentColor" /> CSV
+                </button>
+              </div>
+            </div>
+
             {/* Clear All Data Danger Action */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: "16px", borderTop: "1px dashed var(--border)" }}>
               <div>
@@ -245,6 +413,85 @@ export default function SettingsPage() {
               </button>
             </div>
 
+          </div>
+
+          {/* Section 4: Notifications */}
+          <div className="glass-card" style={{ padding: "26px", borderRadius: "18px" }}>
+            <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "18px", display: "flex", alignItems: "center", gap: 10 }}>
+              <MailIcon size={20} color="#FF8000" />
+              <span>Notifications</span>
+            </h3>
+
+            {/* Task-complete email */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "var(--text)" }}>Task-Complete Email</div>
+                <div style={{ fontSize: "0.78rem", color: "var(--text-dim)" }}>Email me when a transcription, translation, or voice job finishes</div>
+              </div>
+              <ToggleSwitch checked={notifyTaskComplete} onChange={setNotifyTaskComplete} />
+            </div>
+
+            {/* Weekly usage summary */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: "16px", borderTop: "1px dashed var(--border)" }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "var(--text)" }}>Weekly Usage Summary</div>
+                <div style={{ fontSize: "0.78rem", color: "var(--text-dim)" }}>Receive a weekly email digest of your activity &amp; usage stats</div>
+              </div>
+              <ToggleSwitch checked={notifyWeeklySummary} onChange={setNotifyWeeklySummary} />
+            </div>
+          </div>
+
+          {/* Section 5: Interface & Accessibility */}
+          <div className="glass-card" style={{ padding: "26px", borderRadius: "18px" }}>
+            <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "18px", display: "flex", alignItems: "center", gap: 10 }}>
+              <GlobeIcon size={20} color="#FF8000" />
+              <span>Interface &amp; Accessibility</span>
+            </h3>
+
+            <div className="settings-grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
+              {/* Theme */}
+              <div>
+                <label className="form-label" style={{ marginBottom: "6px", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)" }}>
+                  Theme
+                </label>
+                <select
+                  className="select-input"
+                  value={themeMode}
+                  onChange={(e) => setThemeMode(e.target.value)}
+                  style={{ height: "42px", fontSize: "0.88rem", borderRadius: "10px" }}
+                >
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                  <option value="auto">Auto (system)</option>
+                </select>
+              </div>
+
+              {/* UI Language */}
+              <div>
+                <label className="form-label" style={{ marginBottom: "6px", fontSize: "0.82rem", fontWeight: 700, color: "var(--text-dim)" }}>
+                  Interface Language
+                </label>
+                <select
+                  className="select-input"
+                  value={uiLanguage}
+                  onChange={(e) => setUiLanguage(e.target.value)}
+                  style={{ height: "42px", fontSize: "0.88rem", borderRadius: "10px" }}
+                >
+                  <option value="en">English</option>
+                  <option value="hi">हिन्दी (Hindi)</option>
+                  <option value="es">Español</option>
+                  <option value="fr">Français</option>
+                  <option value="de">Deutsch</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: "16px", paddingTop: "16px", borderTop: "1px dashed var(--border)" }}>
+              <ClockIcon size={14} color="var(--text-dim)" />
+              <span style={{ fontSize: "0.78rem", color: "var(--text-dim)" }}>
+                Theme applies instantly across the app (light / dark / system). Interface language is saved for upcoming localization.
+              </span>
+            </div>
           </div>
 
           {/* Bottom Action CTA Bar */}
