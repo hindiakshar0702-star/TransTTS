@@ -1,72 +1,65 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+import { registerAndSignIn } from "./helpers/auth";
+
+/**
+ * Authentication flow — Auth.js v5 cookie session. Login/Sign-up links are
+ * intentionally absent from the public chrome, so tests navigate to /login
+ * directly. Register only creates the account (no auto-session); the UI login
+ * test exercises signIn("credentials") through the form.
+ */
+
+function uniqueEmail(): string {
+  return `pw-auth-${Date.now()}-${Math.floor(Math.random() * 1e6)}@transtts.local`;
+}
+
+async function registerOnly(page: Page, email: string): Promise<void> {
+  const res = await page.request.post("/api/auth/register", {
+    data: { email, password: "TestPass123", name: "PW Auth Tester" },
+  });
+  expect(res.status()).toBe(201);
+}
 
 test.describe("Authentication Flow and Session Persistence", () => {
-  test.beforeEach(async ({ page }) => {
-    // Clear localStorage before each test
-    await page.goto("/");
-    await page.evaluate(() => localStorage.clear());
-  });
-
-  test("should load home page and navigate to login page", async ({ page }) => {
+  test("home page loads and /login shows the sign-in form with the landing header", async ({ page }) => {
     await page.goto("/");
     await expect(page).toHaveTitle(/TransTTS/);
-    
-    // Find Sign In link in Navbar and click it
-    const signInBtn = page.locator(".navbar .btn-ghost").filter({ hasText: "Sign In" });
-    await expect(signInBtn).toBeVisible();
-    await signInBtn.click();
-    
-    await expect(page).toHaveURL(/\/login/);
-  });
 
-  test("should successfully log in with credentials and redirect to dashboard", async ({ page }) => {
+    // Login/Signup links are intentionally removed from the header — go direct.
     await page.goto("/login");
-
-    // Enter email and password
-    await page.fill('input[type="email"]', "testuser@example.com");
-    await page.fill('input[type="password"]', "password123");
-
-    // Click Sign In button
-    const submitBtn = page.locator('button[type="submit"]', { hasText: "Sign In" });
-    await expect(submitBtn).toBeVisible();
-    await submitBtn.click();
-
-    // Verify loading state or spinner if any, then wait for redirect
-    await page.waitForURL(/\/dashboard/, { timeout: 5000 });
-
-    // Check dashboard header and stored credentials
-    await expect(page.locator("h1")).toContainText(/Dashboard/i);
-    
-    const isLoggedIn = await page.evaluate(() => localStorage.getItem("isLoggedIn"));
-    const userEmail = await page.evaluate(() => localStorage.getItem("userEmail"));
-    
-    expect(isLoggedIn).toBe("true");
-    expect(userEmail).toBe("testuser@example.com");
+    await expect(page.locator(".landing-nav")).toBeVisible();
+    await expect(page.locator('input[type="email"]')).toBeVisible();
+    await expect(page.locator('button[type="submit"]')).toContainText(/Sign In/i);
   });
 
-  test("should successfully sign out from dashboard and clear session", async ({ page }) => {
-    // Directly inject logged-in state to localStorage to skip login step
-    await page.goto("/");
-    await page.evaluate(() => {
-      localStorage.setItem("isLoggedIn", "true");
-      localStorage.setItem("userEmail", "testuser@example.com");
-      localStorage.setItem("userName", "testuser");
-    });
+  test("logs in with credentials and lands on the dashboard", async ({ page }) => {
+    const email = uniqueEmail();
+    await registerOnly(page, email);
 
-    // Go to dashboard
+    await page.goto("/login");
+    await page.fill('input[type="email"]', email);
+    await page.fill('input[type="password"]', "TestPass123");
+    await page.locator('button[type="submit"]').click();
+
+    await page.waitForURL(/\/dashboard/, { timeout: 15000 });
+    await expect(page.locator("h1")).toContainText(/Dashboard|Welcome/i);
+
+    // Session is a real cookie — the /api/auth/me probe must succeed.
+    const me = await page.request.get("/api/auth/me");
+    expect(me.ok()).toBeTruthy();
+  });
+
+  test("signs out from the dashboard and the session is invalidated", async ({ page }) => {
+    const email = uniqueEmail();
+    // Register + Auth.js sign-in so we land authenticated.
+    await registerAndSignIn(page.request, { emailPrefix: "pw-auth-out" });
+
     await page.goto("/dashboard");
-    await expect(page.locator("h1")).toContainText(/Dashboard/i);
+    await expect(page.locator("h1")).toContainText(/Dashboard|Welcome/i);
 
-    // Click sign out button in Navbar
-    const signOutBtn = page.locator(".navbar button", { hasText: "Sign Out" });
-    await expect(signOutBtn).toBeVisible();
-    await signOutBtn.click();
+    await page.locator(".sidebar-logout-btn").click();
+    await page.waitForURL((url) => !url.pathname.startsWith("/dashboard"), { timeout: 10000 });
 
-    // Verify redirected back to home page
-    await page.waitForURL("http://localhost:3000/");
-
-    // Verify credentials cleared
-    const isLoggedIn = await page.evaluate(() => localStorage.getItem("isLoggedIn"));
-    expect(isLoggedIn).toBeNull();
+    const me = await page.request.get("/api/auth/me");
+    expect(me.status()).toBe(401);
   });
 });

@@ -1,15 +1,12 @@
 import { test, expect } from "@playwright/test";
+import { registerAndSignIn } from "./helpers/auth";
 
 test.describe("Core Features Functional Validation", () => {
-  
+
   test.beforeEach(async ({ page }) => {
-    // Inject active login session into localStorage to bypass auth guard for page routes
-    await page.goto("/");
-    await page.evaluate(() => {
-      localStorage.setItem("isLoggedIn", "true");
-      localStorage.setItem("userEmail", "featuretest@example.com");
-      localStorage.setItem("userName", "featuretest");
-    });
+    // Feature pages are behind real Auth.js cookie-session auth: register a
+    // throwaway user and complete credentials sign-in on the page's cookie jar.
+    await registerAndSignIn(page.request, { emailPrefix: "pw-feat" });
   });
 
   test("should interact with TTS Generator Board and show generating state", async ({ page }) => {
@@ -25,7 +22,8 @@ test.describe("Core Features Functional Validation", () => {
     const speedSlider = page.locator("input.speed-slider");
     await expect(speedSlider).toBeVisible();
     await speedSlider.fill("1.2");
-    await expect(page.locator(".speed-value")).toContainText("1.2x");
+    // Speed readout is an inline pill showing "{speed}x"
+    await expect(page.getByText("1.2x", { exact: true })).toBeVisible();
 
     // Click on a voice card (e.g. Swara or Madhur)
     const voiceCard = page.locator(".voice-card").filter({ hasText: "Madhur" });
@@ -44,17 +42,11 @@ test.describe("Core Features Functional Validation", () => {
 
   test("should interact with AI Translation Board and show translating state", async ({ page }) => {
     await page.goto("/translate");
-    await expect(page.locator("h1")).toContainText(/Translation Board/i);
+    await expect(page.locator("h1")).toContainText(/Translation Studio/i);
 
-    // Select source language (auto detect) and target language (Hindi - hi)
-    const sourceSelect = page.locator("select.select-input").first();
-    const targetSelect = page.locator("select.select-input").last();
-    
-    await expect(sourceSelect).toBeVisible();
-    await expect(targetSelect).toBeVisible();
-
-    await sourceSelect.selectOption("auto");
-    await targetSelect.selectOption("hi");
+    // Language pickers are custom dropdowns (LanguageSelect), not native selects.
+    const langTriggers = page.locator(".custom-lang-trigger");
+    await expect(langTriggers.first()).toBeVisible();
 
     // Input text in source box
     const sourceTextArea = page.locator("textarea.textarea-input").first();
@@ -69,25 +61,22 @@ test.describe("Core Features Functional Validation", () => {
     await expect(page.locator("button.btn-primary")).toContainText(/Translating/i);
   });
 
-  test("should fill out and successfully submit the Contact Sales form", async ({ page }) => {
+  test("should fill out and successfully submit the Contact Us form", async ({ page }) => {
     await page.goto("/contact");
-    await expect(page.locator("h1")).toContainText(/Contact Sales/i);
+    await expect(page.locator("h1")).toContainText(/talk/i);
 
-    // Fill the required form fields
-    await page.fill('input[placeholder="Your full name"]', "Test User");
-    await page.fill('input[placeholder="you@company.com"]', "testuser@company.com");
-    await page.fill('input[placeholder="Your company name"]', "Acme Corp");
-    await page.selectOption("select.select-input", "6-20");
-    await page.fill('textarea.textarea-input', "We want to purchase a bulk enterprise package for Voice synthesis.");
+    // Fill the required form fields (zod: name 2+, valid email, message 10+)
+    await page.fill("#c-name", "Test User");
+    await page.fill("#c-email", "testuser@example.com");
+    await page.fill("#c-message", "This is an automated Playwright end-to-end test message.");
 
-    // Submit form
+    // Submit form — POSTs /api/contact (mail transport dev-logs when unconfigured)
     const submitBtn = page.locator('button[type="submit"]');
     await expect(submitBtn).toBeVisible();
     await submitBtn.click();
 
-    // Verify success banner and toast matches
-    await expect(page.locator("h2")).toContainText(/Thank You/i);
-    await expect(page.locator(".container")).toContainText("testuser@company.com");
+    // Verify success state
+    await expect(page.locator("h2", { hasText: /Message sent/i })).toBeVisible({ timeout: 10000 });
   });
 
   test("should load the Voice Recorder & Teleprompter interface", async ({ page }) => {
@@ -95,11 +84,11 @@ test.describe("Core Features Functional Validation", () => {
     await expect(page.locator("h1")).toContainText(/Voice Recorder/i);
 
     // Verify teleprompter area is loaded
-    const teleprompter = page.locator(".glass-card").filter({ hasText: /Teleprompter Script/i });
+    const teleprompter = page.locator(".glass-card").filter({ hasText: /Script Teleprompter/i });
     await expect(teleprompter).toBeVisible();
 
-    // Check Start Recording toggle button
-    const startRecordBtn = page.locator("button.btn-primary", { hasText: /Start Recording/i });
+    // Check Start Recording toggle button (round icon button, aria-labelled)
+    const startRecordBtn = page.getByRole("button", { name: /Start Recording/i });
     await expect(startRecordBtn).toBeVisible();
   });
 });

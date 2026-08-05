@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
+import { signInApi } from "./helpers/auth";
 
 /**
  * OTP (email + mobile) end-to-end API tests. Deterministic and provider-free:
@@ -27,6 +28,9 @@ async function registerUser(request: APIRequestContext, ip: string) {
     data: { email, password: "Test@1234Pw", name: "OTP Tester" },
   });
   expect(res.status(), "register should create account").toBe(201);
+  // Register no longer auto-sessions (Auth.js v5) — sign in so the OTP routes,
+  // which read getSessionUser(), see an authenticated user.
+  await signInApi(request, email, "Test@1234Pw", headers(ip));
   return { email };
 }
 
