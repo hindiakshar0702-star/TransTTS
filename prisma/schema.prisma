@@ -114,4 +114,8 @@ model Job {
   errorMsg   String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+
+  // Jobs list queries filter by owner (+ optional type) and sort by newest.
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, type])
 }
