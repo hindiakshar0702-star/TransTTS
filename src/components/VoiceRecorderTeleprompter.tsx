@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { useToast } from "@/components/Toast";
 import { FileTextIcon, MicIcon, RadioIcon, CheckCircleIcon, PlayIcon, PauseIcon, DownloadIcon, SparklesIcon, ShieldIcon, ClockIcon, SettingsIcon } from "@/components/Icons";
 import { FlagImage } from "@/components/LanguageSelect";
+import { computeHighlightIndex, cleanToWords, createUtteranceFeed } from "@/lib/teleprompterMatch";
 
 // Minimal Web Speech API typings — these are not part of the standard lib.dom.
 interface SpeechRecognitionAlternative { readonly transcript: string }
@@ -122,6 +123,9 @@ export default function VoiceRecorderTeleprompter({ onSave, onCancel }: VoiceRec
   const cleanWordsRef = useRef<string[]>([]);
   // Ref for the current word index to use inside recognition callback (avoids stale state)
   const currentWordIndexRef = useRef(-1);
+  // Delta-feeder: guarantees each spoken word reaches the matcher exactly once
+  // (re-feeding cumulative interim words caused the highlight-jump bug).
+  const utteranceFeedRef = useRef(createUtteranceFeed());
 
   const { showToast } = useToast();
 
@@ -219,6 +223,7 @@ export default function VoiceRecorderTeleprompter({ onSave, onCancel }: VoiceRec
       setCurrentWordIndex(-1);
       currentWordIndexRef.current = -1;
       spokenWordsCumulativeRef.current = [];
+      utteranceFeedRef.current.reset();
       setIsPlayingBack(false);
 
       const constraints = {
@@ -445,52 +450,6 @@ export default function VoiceRecorderTeleprompter({ onSave, onCancel }: VoiceRec
     draw();
   };
 
-  // Levenshtein distance for fuzzy word matching (handles mispronunciations / recognition errors)
-  const levenshtein = (a: string, b: string): number => {
-    if (a.length === 0) return b.length;
-    if (b.length === 0) return a.length;
-    const matrix: number[][] = [];
-    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
-    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
-    for (let i = 1; i <= b.length; i++) {
-      for (let j = 1; j <= a.length; j++) {
-        const cost = b[i - 1] === a[j - 1] ? 0 : 1;
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j] + 1,
-          matrix[i][j - 1] + 1,
-          matrix[i - 1][j - 1] + cost
-        );
-      }
-    }
-    return matrix[b.length][a.length];
-  };
-
-  // Check if two words are a fuzzy match
-  const isFuzzyMatch = (spoken: string, scriptWord: string): boolean => {
-    if (!spoken || !scriptWord) return false;
-    const s1 = spoken.toLowerCase().trim();
-    const s2 = scriptWord.toLowerCase().trim();
-
-    // Exact match
-    if (s1 === s2) return true;
-
-    // For short words (<= 4 chars), require exact match ONLY (prevents "is", "a", "to", "in", "it" from skipping far ahead)
-    if (s1.length <= 4 || s2.length <= 4) {
-      return s1 === s2;
-    }
-
-    // Prefix match for longer words (length >= 5)
-    if (s1.length >= 5 && s2.length >= 5) {
-      if (s1.startsWith(s2.slice(0, 4)) || s2.startsWith(s1.slice(0, 4))) {
-        return true;
-      }
-    }
-
-    // Levenshtein distance for long words
-    const maxDist = Math.max(1, Math.floor(s2.length * 0.25));
-    return levenshtein(s1, s2) <= maxDist;
-  };
-
   // Advance the highlight index and scroll into view
   const advanceHighlightTo = (newIndex: number) => {
     if (newIndex <= currentWordIndexRef.current) return;
@@ -505,34 +464,16 @@ export default function VoiceRecorderTeleprompter({ onSave, onCancel }: VoiceRec
     }, 40);
   };
 
-  // Try to match spoken words against upcoming script words accurately
+  // Sequentially match spoken words against upcoming script words. Advances one
+  // script word per matched spoken word, with a small lookahead to recover when
+  // the recognition engine drops/merges short function words (e.g. "to", "the").
   const matchSpokenWords = (spokenWords: string[]) => {
     const cw = cleanWordsRef.current;
     if (spokenWords.length === 0 || cw.length === 0) return;
 
-    const currentIdx = currentWordIndexRef.current;
-    // Tight search window: max 5 words ahead from current position
-    const startSearch = Math.max(0, currentIdx + 1);
-    const endSearch = Math.min(cw.length, startSearch + 5);
-
-    let targetIdx = currentIdx;
-
-    for (const spoken of spokenWords) {
-      if (spoken.length < 2) continue; // Skip single-letter noise
-
-      for (let s = startSearch; s < endSearch; s++) {
-        if (isFuzzyMatch(spoken, cw[s])) {
-          targetIdx = s;
-          break;
-        }
-      }
-      if (targetIdx > currentIdx) break; // Advance step by step
-    }
-
-    // Capped jump: max 2 words per speech event to ensure smooth word-by-word pacing
-    if (targetIdx > currentIdx) {
-      const maxAllowedIndex = Math.min(targetIdx, currentIdx + 2);
-      advanceHighlightTo(maxAllowedIndex);
+    const newIdx = computeHighlightIndex(cw, currentWordIndexRef.current, spokenWords);
+    if (newIdx > currentWordIndexRef.current) {
+      advanceHighlightTo(newIdx);
     }
   };
 
@@ -563,22 +504,23 @@ export default function VoiceRecorderTeleprompter({ onSave, onCancel }: VoiceRec
           }
         }
 
-        const cleanText = (text: string) =>
-          text.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"']/g, "").split(/\s+/).filter(Boolean);
+        // Delta-feed the matcher: every spoken word is matched EXACTLY once.
+        // Re-feeding words the matcher has already consumed is what caused the
+        // highlight to jump ahead (a stale short word can lookahead-match a
+        // duplicate later in the script).
 
-        // Process final results: add to cumulative and match
+        // Final result: feed only the words not already surfaced via interim.
         if (newFinalTranscript.trim()) {
-          const finalWords = cleanText(newFinalTranscript);
+          const finalWords = cleanToWords(newFinalTranscript);
           spokenWordsCumulativeRef.current.push(...finalWords);
-          matchSpokenWords(finalWords);
+          const unfed = utteranceFeedRef.current.final(finalWords);
+          if (unfed.length > 0) matchSpokenWords(unfed);
         }
 
-        // Process interim results: match against upcoming words for responsive highlighting
+        // Interim result (cumulative per utterance): feed only the new tail.
         if (interimTranscript.trim()) {
-          const interimWords = cleanText(interimTranscript);
-          // Only use the last few interim words to avoid re-matching old content
-          const recentInterim = interimWords.slice(-5);
-          matchSpokenWords(recentInterim);
+          const fresh = utteranceFeedRef.current.interim(cleanToWords(interimTranscript));
+          if (fresh.length > 0) matchSpokenWords(fresh);
         }
       };
 
@@ -599,6 +541,9 @@ export default function VoiceRecorderTeleprompter({ onSave, onCancel }: VoiceRec
       };
 
       recognition.onend = () => {
+        // A session ended: any pending interim words died with it, so the next
+        // session's cumulative interim starts from zero.
+        utteranceFeedRef.current.reset();
         // Auto restart if still recording and not paused
         if (isRecordingRef.current && !isPausedRef.current) {
           try {
@@ -664,6 +609,7 @@ export default function VoiceRecorderTeleprompter({ onSave, onCancel }: VoiceRec
     setCurrentWordIndex(-1);
     currentWordIndexRef.current = -1;
     spokenWordsCumulativeRef.current = [];
+    utteranceFeedRef.current.reset();
     showToast("Recorded audio cleared", "info");
     if (onCancel) onCancel();
   };
