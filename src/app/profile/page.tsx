@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
+import { signIn } from "next-auth/react";
 import { validatePassword } from "@/lib/password";
 import PasswordEyeToggle from "@/components/PasswordEyeToggle";
 import Sidebar from "@/components/Sidebar";
@@ -115,6 +116,11 @@ function ProfileContent() {
       if (!res.ok) {
         showToast(data.error || "Could not change password.", "error");
         return;
+      }
+      // The password change revoked all sessions (this one included). Re-mint
+      // THIS device's session with the new password so the user stays signed in.
+      if (data.email) {
+        await signIn("credentials", { email: data.email, password: newPass, redirect: false });
       }
       showToast("Password updated. Other devices have been signed out.", "success");
       setCurrentPass("");
@@ -400,6 +406,8 @@ function ProfileContent() {
                 <label className="form-label" style={{ fontWeight: 700, fontSize: "0.85rem" }}>Phone Number</label>
                 <input
                   type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
                   className="text-input"
                   value={userPhone}
                   onChange={(e) => setUserPhone(e.target.value)}

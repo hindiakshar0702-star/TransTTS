@@ -1,30 +1,22 @@
-import { NextRequest, NextResponse } from "next/server";
-import { verifySession, SESSION_COOKIE } from "@/lib/jwt";
+import NextAuth from "next-auth";
+import { authConfig } from "@/auth.config";
 
 /**
- * Route gate (Next 16 `proxy` convention, formerly `middleware`). Any request
- * to a protected path without a valid session JWT is redirected to
- * /login?redirect=<path>. Runs on the Edge runtime, so it imports only
- * `@/lib/jwt` (jose / Web-Crypto) — never `@/lib/auth` (node scrypt/prisma).
- * This is the real server-side protection; client checks are cosmetic.
+ * Route gate (Next 16 `proxy` convention). Auth.js v5 edge middleware: decodes
+ * the session JWT (via AUTH_SECRET — no provider/DB needed to READ a session)
+ * and runs the `authorized` callback in auth.config.ts, which redirects
+ * unauthenticated hits on protected paths to /login?redirect=<path>.
+ *
+ * Edge runtime: imports only the edge-safe auth.config (no prisma / node crypto).
  */
-export async function proxy(req: NextRequest) {
-  const { pathname } = req.nextUrl;
-
-  const token = req.cookies.get(SESSION_COOKIE)?.value;
-  const session = token ? await verifySession(token) : null;
-
-  if (!session) {
-    const url = new URL("/login", req.url);
-    url.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(url);
-  }
-  return NextResponse.next();
-}
+// Auth.js exposes its middleware as `.auth`; Next 16 wants a function exported
+// as default (or named `proxy`). Default-export the wrapper.
+const { auth } = NextAuth(authConfig);
+export default auth;
 
 export const config = {
   // Only the authenticated app surfaces. Landing, /login, /contact, and
-  // /api/* are intentionally excluded.
+  // /api/* (Auth.js handles its own) are intentionally excluded.
   matcher: [
     "/dashboard/:path*",
     "/profile/:path*",

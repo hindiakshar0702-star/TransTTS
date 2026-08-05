@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { clearUserSession } from "@/lib/auth";
+import { signOut } from "@/auth";
 import { checkOrigin } from "@/lib/api-guard";
 
 export const runtime = "nodejs";
@@ -9,6 +9,7 @@ export async function POST(req: NextRequest) {
   if (!checkOrigin(req)) {
     return NextResponse.json({ error: "Cross-origin requests are not allowed." }, { status: 403 });
   }
-  await clearUserSession();
+  // Clear the Auth.js session cookie (no redirect — client handles navigation).
+  await signOut({ redirect: false });
   return NextResponse.json({ ok: true });
 }

@@ -1,55 +1,17 @@
-import { scrypt, randomBytes, timingSafeEqual } from "crypto";
-import { promisify } from "util";
-import { cookies } from "next/headers";
 import prisma from "@/lib/prisma";
-import { signSession, verifySession, SESSION_COOKIE, type SessionPayload } from "@/lib/jwt";
+import { auth } from "@/auth";
 
 /**
- * Node-only auth helpers: password hashing (scrypt) + session cookie
- * management + current-user lookup. Do NOT import this from middleware
- * (scrypt / prisma are not Edge-safe) — use `@/lib/jwt` there instead.
+ * Node-only auth helpers bridging the app to Auth.js v5. `getSessionUser`
+ * reads the Auth.js session (JWT cookie) and re-resolves it to a live DB user,
+ * so every existing API route keeps its `getSessionUser()` call unchanged.
+ * Password hashing lives in `@/lib/password-hash`; do NOT import this file
+ * (prisma) from the edge middleware — it uses `@/auth.config` instead.
  */
 
-const scryptAsync = promisify(scrypt);
-const KEYLEN = 64;
-
-/** Hash a password as `salt:derivedKey`, both hex. */
-export async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16).toString("hex");
-  const derived = (await scryptAsync(password, salt, KEYLEN)) as Buffer;
-  return `${salt}:${derived.toString("hex")}`;
-}
-
-/** Constant-time verify against a `salt:derivedKey` string. */
-export async function verifyPassword(password: string, stored: string): Promise<boolean> {
-  const [salt, key] = stored.split(":");
-  if (!salt || !key) return false;
-  const derived = (await scryptAsync(password, salt, KEYLEN)) as Buffer;
-  const keyBuf = Buffer.from(key, "hex");
-  if (keyBuf.length !== derived.length) return false;
-  return timingSafeEqual(keyBuf, derived);
-}
-
-const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
-
-/** Sign a session JWT and set it as an httpOnly cookie. */
-export async function createUserSession(payload: SessionPayload): Promise<void> {
-  const token = await signSession(payload);
-  const store = await cookies();
-  store.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_MAX_AGE,
-  });
-}
-
-/** Remove the session cookie (logout). */
-export async function clearUserSession(): Promise<void> {
-  const store = await cookies();
-  store.delete(SESSION_COOKIE);
-}
+// Re-exported for back-compat with existing importers (register / reset /
+// change-password). The implementation now lives in password-hash.ts.
+export { hashPassword, verifyPassword } from "@/lib/password-hash";
 
 export interface SessionUser {
   id: string;
@@ -64,20 +26,18 @@ export interface SessionUser {
 }
 
 /**
- * Resolve the current session to a live DB user record, or null. Re-reads the
- * user each call so a role/email change or account deletion takes effect
- * immediately (the JWT alone is not trusted for authorization state).
+ * Resolve the current Auth.js session to a live DB user record, or null.
+ * Re-reads the user each call so a role/email change or account deletion takes
+ * effect immediately (the JWT alone is not trusted for authorization state),
+ * and enforces token-version revocation (password reset / "log out everywhere").
  */
 export async function getSessionUser(): Promise<SessionUser | null> {
-  const store = await cookies();
-  const token = store.get(SESSION_COOKIE)?.value;
-  if (!token) return null;
-
-  const payload = await verifySession(token);
-  if (!payload) return null;
+  const session = await auth();
+  const id = session?.user?.id;
+  if (!id) return null;
 
   const user = await prisma.user.findUnique({
-    where: { id: payload.sub },
+    where: { id },
     select: {
       id: true, email: true, name: true, role: true,
       image: true, provider: true, tokenVersion: true,
@@ -88,7 +48,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
 
   // Session revocation: a stale token version means the password was reset or
   // the user chose "log out everywhere" after this token was issued. Reject it.
-  if ((payload.tv ?? 0) !== user.tokenVersion) return null;
+  if ((session.user.tv ?? 0) !== user.tokenVersion) return null;
 
   const { tokenVersion: _tv, ...safe } = user;
   void _tv;

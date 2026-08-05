@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { hashPassword, createUserSession } from "@/lib/auth";
+import { hashPassword } from "@/lib/auth";
 import { guard } from "@/lib/api-guard";
 import { validatePassword } from "@/lib/password";
 
@@ -50,16 +50,13 @@ export async function POST(req: NextRequest) {
       data: { email: normEmail, name: safeName, passwordHash, provider: "credentials" },
       select: {
         id: true, email: true, name: true, role: true,
-        image: true, provider: true, tokenVersion: true,
+        image: true, provider: true,
       },
     });
 
-    await createUserSession({
-      sub: user.id, email: user.email, role: user.role, name: user.name, tv: user.tokenVersion,
-    });
-    const { tokenVersion: _tv, ...safeUser } = user;
-    void _tv;
-    return NextResponse.json({ user: safeUser }, { status: 201 });
+    // Session is established by Auth.js: the client calls signIn("credentials")
+    // right after a 201 here. (Register only creates the account.)
+    return NextResponse.json({ user }, { status: 201 });
   } catch (error) {
     console.error("Register error:", error);
     return NextResponse.json({ error: "Registration failed. Please try again." }, { status: 500 });

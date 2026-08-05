@@ -2,7 +2,9 @@
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
+import { signIn } from "next-auth/react";
+import "../landing.css";
+import LandingNavbar from "@/components/landing/LandingNavbar";
 import { useToast } from "@/components/Toast";
 import { CheckCircleIcon, SparklesIcon } from "@/components/landing/Icons";
 import { validatePassword, passwordStrength } from "@/lib/password";
@@ -11,14 +13,15 @@ import PasswordEyeToggle from "@/components/PasswordEyeToggle";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const STRENGTH_COLORS = ["#ef4444", "#f59e0b", "#eab308", "#84cc16", "#22c55e"];
 
+// Auth.js v5 redirects OAuth failures back with ?error=<code>.
 const OAUTH_ERRORS: Record<string, string> = {
-  google_not_configured: "Google sign-in is not configured yet.",
-  google_denied: "Google sign-in was cancelled.",
-  google_state: "Google sign-in session expired. Please try again.",
-  google_token: "Could not complete Google sign-in.",
-  google_userinfo: "Could not read your Google profile.",
-  google_unverified: "Your Google email is not verified.",
-  google_failed: "Google sign-in failed. Please try again.",
+  OAuthAccountNotLinked: "This email is already registered with a different sign-in method.",
+  AccessDenied: "Google sign-in was cancelled or denied.",
+  Configuration: "Google sign-in is not configured correctly.",
+  Verification: "Sign-in link is invalid or has expired.",
+  CredentialsSignin: "Invalid email or password.",
+  OAuthSignin: "Could not start Google sign-in. Please try again.",
+  OAuthCallback: "Could not complete Google sign-in. Please try again.",
 };
 
 function LoginContent() {
@@ -73,16 +76,35 @@ function LoginContent() {
 
     setIsLoading(true);
     try {
-      const endpoint = isSignUp ? "/api/auth/register" : "/api/auth/login";
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(isSignUp ? { email, password, name } : { email, password }),
-      });
-      const data = await res.json().catch(() => ({}));
+      // Sign-up first creates the account; then everyone establishes their
+      // session through Auth.js credentials sign-in.
+      if (isSignUp) {
+        const res = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password, name }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showToast(data.error || "Registration failed. Please try again.", "error");
+          setIsLoading(false);
+          return;
+        }
+      }
 
-      if (!res.ok) {
-        showToast(data.error || "Authentication failed. Please try again.", "error");
+      const result = await signIn("credentials", {
+        email: email.trim(),
+        password,
+        redirect: false,
+      });
+
+      if (!result || result.error) {
+        showToast(
+          isSignUp
+            ? "Account created, but automatic sign-in failed. Please log in."
+            : "Invalid email or password.",
+          "error"
+        );
         setIsLoading(false);
         return;
       }
@@ -104,14 +126,14 @@ function LoginContent() {
 
   return (
     <>
-      <Navbar />
-      <main className="app-page" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "calc(100vh - 64px)", padding: "40px 20px" }}>
+      <LandingNavbar />
+      <main className="app-page" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "108px 20px 40px" }}>
         <div className="container" style={{ maxWidth: "1000px" }}>
           
           <div className="teleprompter-grid fade-in" style={{ gridTemplateColumns: "1fr 1.1fr", minHeight: "540px", alignItems: "stretch" }}>
             
             {/* LEFT SIDE: BRANDING / BENEFITS */}
-            <div className="glass-card" style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "40px", background: "radial-gradient(circle at 10% 10%, rgba(255,128,0,0.08), transparent), #ffffff", borderRight: "1px solid var(--border)", height: "100%" }}>
+            <div className="glass-card" style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "40px", background: "radial-gradient(circle at 10% 10%, rgba(255,128,0,0.08), transparent), var(--bg-card)", borderRight: "1px solid var(--border)", height: "100%" }}>
               <div>
                 <div style={{ marginBottom: "20px" }}>
                   <img src="/logo.svg" alt="TransTTS" style={{ height: "32px", width: "auto" }} />
@@ -172,11 +194,12 @@ function LoginContent() {
 
 
 
-              {/* Google OAuth */}
-              <a
-                href="/api/auth/google"
+              {/* Google OAuth (Auth.js v5) */}
+              <button
+                type="button"
+                onClick={() => signIn("google", { callbackUrl: redirectPath })}
                 className="btn btn-secondary btn-large"
-                style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "10px", textDecoration: "none", marginBottom: "8px" }}
+                style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "10px", marginBottom: "8px", cursor: "pointer" }}
               >
                 <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
                   <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.3 6.1 29.4 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.3-.4-3.5z"/>
@@ -185,7 +208,7 @@ function LoginContent() {
                   <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4 5.6l6.3 5.3C41.9 36.2 44 30.6 44 24c0-1.3-.1-2.3-.4-3.5z"/>
                 </svg>
                 <span>Continue with Google</span>
-              </a>
+              </button>
 
               {/* Divider */}
               <div style={{ display: "flex", alignItems: "center", gap: "12px", margin: "16px 0" }}>
@@ -201,6 +224,7 @@ function LoginContent() {
                     <label className="form-label">Full Name</label>
                     <input
                       type="text"
+                      autoComplete="name"
                       className="text-input"
                       placeholder="John Doe"
                       value={name}
@@ -215,6 +239,8 @@ function LoginContent() {
                   <label className="form-label">Email Address</label>
                   <input
                     type="email"
+                    inputMode="email"
+                    autoComplete="email"
                     className="text-input"
                     placeholder="name@company.com"
                     value={email}
@@ -228,7 +254,7 @@ function LoginContent() {
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
                     <label className="form-label" style={{ marginBottom: 0 }}>Password</label>
                     {!isSignUp && (
-                      <Link href="/forgot-password" style={{ fontSize: "0.78rem", color: "var(--accent)", textDecoration: "none", fontWeight: 600 }}>
+                      <Link href="/forgot-password" style={{ fontSize: "0.78rem", color: "var(--accent-text)", textDecoration: "none", fontWeight: 600 }}>
                         Forgot?
                       </Link>
                     )}

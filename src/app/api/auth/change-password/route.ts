@@ -5,7 +5,6 @@ import {
   verifyPassword,
   hashPassword,
   bumpTokenVersion,
-  createUserSession,
 } from "@/lib/auth";
 import { guard } from "@/lib/api-guard";
 import { validatePassword } from "@/lib/password";
@@ -63,18 +62,12 @@ export async function POST(req: NextRequest) {
     const passwordHash = await hashPassword(newPassword);
     await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
 
-    // Revoke every existing session (other devices), then mint a fresh session
-    // for THIS device so the user who just changed their password stays signed in.
-    const newVersion = await bumpTokenVersion(user.id);
-    await createUserSession({
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-      name: user.name,
-      tv: newVersion,
-    });
+    // Revoke every existing session (including this device — the current
+    // Auth.js JWT's tokenVersion is now stale). The client re-establishes THIS
+    // device's session via signIn("credentials") with the new password.
+    await bumpTokenVersion(user.id);
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, email: user.email });
   } catch (error) {
     console.error("Change-password error:", error);
     return NextResponse.json({ error: "Could not change password. Please try again." }, { status: 500 });
