@@ -2,7 +2,8 @@
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
+import "../landing.css";
+import LandingNavbar from "@/components/landing/LandingNavbar";
 import { useToast } from "@/components/Toast";
 import { SparklesIcon } from "@/components/landing/Icons";
 import { validatePassword, passwordStrength } from "@/lib/password";
@@ -62,8 +63,8 @@ function ResetContent() {
 
   return (
     <>
-      <Navbar />
-      <main className="app-page" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "calc(100vh - 64px)", padding: "40px 20px" }}>
+      <LandingNavbar />
+      <main className="app-page" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "108px 20px 40px" }}>
         <div className="container" style={{ maxWidth: "440px" }}>
           <div className="glass-card fade-in" style={{ padding: "40px" }}>
             <img src="/logo.svg" alt="TransTTS" style={{ height: "32px", width: "auto", marginBottom: "24px" }} />

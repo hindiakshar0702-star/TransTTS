@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter } from "next/navigation";
-import Navbar from "@/components/Navbar";
+import "../landing.css";
+import LandingNavbar from "@/components/landing/LandingNavbar";
 import OtpInput from "@/components/OtpInput";
 import { useToast } from "@/components/Toast";
 import { useSession } from "@/lib/useSession";
@@ -165,8 +166,8 @@ function VerifyContent() {
 
   return (
     <>
-      <Navbar />
-      <main className="app-page" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "calc(100vh - 64px)", padding: "40px 20px" }}>
+      <LandingNavbar />
+      <main className="app-page" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "108px 20px 40px" }}>
         <div className="container" style={{ maxWidth: "480px" }}>
           <div className="glass-card fade-in" style={{ padding: "36px" }}>
             <img src="/logo.svg" alt="TransTTS" style={{ height: "32px", width: "auto", marginBottom: "20px" }} />
@@ -216,6 +217,8 @@ function VerifyContent() {
                     <label className="form-label">Phone Number</label>
                     <input
                       type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
                       className="text-input"
                       placeholder="+91 98765 43210"
                       value={phone}
