@@ -8,7 +8,9 @@ set -e
 
 if [ -n "$DATABASE_URL" ]; then
   echo "[entrypoint] applying database migrations..."
-  ./node_modules/.bin/prisma migrate deploy
+  # Invoked directly rather than through node_modules/.bin, which is a symlink
+  # farm that does not survive into the slim runtime image.
+  node ./node_modules/prisma/build/index.js migrate deploy
 else
   echo "[entrypoint] DATABASE_URL is not set — refusing to start." >&2
   exit 1

@@ -70,11 +70,15 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
-# Prisma CLI + schema so the entrypoint can apply migrations on boot.
+# Prisma CLI + schema so the entrypoint can apply migrations on boot. The
+# standalone bundle already carries @prisma/client, but not the CLI or the
+# schema/migration engines, so they are copied explicitly. node_modules/.bin is
+# deliberately not copied — it is a directory of symlinks into packages the
+# runtime image does not have, and the entrypoint invokes the CLI entry file
+# directly instead.
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin ./node_modules/.bin
 
 # uploads/ is scratch space (files are deleted once transcribed); generated/
 # holds TTS audio that is served back later, so mount a volume there in
