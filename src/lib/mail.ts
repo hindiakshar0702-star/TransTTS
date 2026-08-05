@@ -1,7 +1,11 @@
+import nodemailer from "nodemailer";
+
 /**
- * Minimal, dependency-free mail sender. Uses the Resend HTTP API when
- * RESEND_API_KEY is configured; otherwise falls back to logging the message to
- * the server console so local/dev flows still work without an email provider.
+ * Mail sender with a transport priority chain:
+ *   1. SMTP (nodemailer) when SMTP_HOST + SMTP_USER + SMTP_PASS are set — this
+ *      is the free "own account" path (e.g. Gmail SMTP with an App Password).
+ *   2. Resend HTTP API when RESEND_API_KEY is set.
+ *   3. Dev fallback: log to the server console (no provider configured).
  *
  * Node-only (reads env, does network I/O). Never import from middleware.
  */
@@ -15,45 +19,65 @@ interface SendMailInput {
   text: string;
 }
 
+async function sendViaSmtp(input: SendMailInput, from: string): Promise<boolean> {
+  const host = process.env.SMTP_HOST!;
+  const port = Number(process.env.SMTP_PORT || 465);
+  const transport = nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465, // 465 = implicit TLS; 587 = STARTTLS
+    auth: { user: process.env.SMTP_USER!, pass: process.env.SMTP_PASS! },
+  });
+  try {
+    await transport.sendMail({ from, to: input.to, subject: input.subject, text: input.text, html: input.html });
+    return true;
+  } catch (err) {
+    console.error("[mail] SMTP send failed:", err);
+    return false;
+  }
+}
+
 /**
- * Best-effort send. Returns true if the provider accepted the message (or the
+ * Best-effort send. Returns true if a transport accepted the message (or the
  * dev fallback logged it). Callers treat email failures as non-fatal so they
  * never leak whether an address exists.
  */
 export async function sendMail({ to, subject, html, text }: SendMailInput): Promise<boolean> {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.MAIL_FROM || "TransTTS <onboarding@resend.dev>";
+  const from = process.env.MAIL_FROM || process.env.SMTP_USER || "TransTTS <onboarding@resend.dev>";
 
-  if (!apiKey) {
-    // Dev fallback: no provider configured. Log so the link is usable locally.
-    console.warn(
-      `[mail] RESEND_API_KEY not set — email not sent.\n  to: ${to}\n  subject: ${subject}\n  ${text}`
-    );
-    return true;
+  // 1. SMTP (own Gmail / any SMTP) — free path.
+  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+    return sendViaSmtp({ to, subject, html, text }, from);
   }
 
-  try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 10_000);
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ from, to, subject, html, text }),
-      signal: ctrl.signal,
-    }).finally(() => clearTimeout(t));
-
-    if (!res.ok) {
-      console.error("[mail] Resend rejected message:", res.status, await res.text().catch(() => ""));
+  // 2. Resend HTTP.
+  const apiKey = process.env.RESEND_API_KEY;
+  if (apiKey) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 10_000);
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ from, to, subject, html, text }),
+        signal: ctrl.signal,
+      }).finally(() => clearTimeout(t));
+      if (!res.ok) {
+        console.error("[mail] Resend rejected message:", res.status, await res.text().catch(() => ""));
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error("[mail] send failed:", err);
       return false;
     }
-    return true;
-  } catch (err) {
-    console.error("[mail] send failed:", err);
-    return false;
   }
+
+  // 3. Dev fallback: log so the code/link is usable locally.
+  console.warn(
+    `[mail] no transport configured (SMTP_* or RESEND_API_KEY) — email not sent.\n  to: ${to}\n  subject: ${subject}\n  ${text}`
+  );
+  return true;
 }
 
 /** Build the email-OTP verification message for a 6-digit code. */
