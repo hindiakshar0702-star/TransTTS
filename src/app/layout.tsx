@@ -6,6 +6,8 @@ import { ToastProvider } from "@/components/Toast";
 import { Analytics } from "@vercel/analytics/react";
 import Script from "next/script";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
+import { siteUrl, SITE_NAME } from "@/lib/seo";
+import StructuredData from "@/components/StructuredData";
 
 // Self-hosted via next/font: no render-blocking Google Fonts CSS @import, no
 // external font requests (the old @import was also blocked by our CSP).
@@ -30,15 +32,69 @@ export const viewport: Viewport = {
   themeColor: "#FF8000",
 };
 
+const ROOT_TITLE = "TransTTS — Transcribe, Translate & Generate AI Voice";
+const ROOT_DESCRIPTION =
+  "Record audio, transcribe speech to text with Whisper AI, translate into Hindi and 99+ languages, and generate natural AI voices — all in one workspace.";
+
 export const metadata: Metadata = {
-  title: "TransTTS AI — Transcribe, Translate & Generate Voice",
-  description:
-    "AI-powered platform using OpenAI Whisper to transcribe audio/video, translate to Hindi & 99+ languages, and generate natural AI voices.",
+  // Resolves every relative URL below (canonical, OG images) against the real
+  // origin. Without it Next emits relative OG URLs, which crawlers ignore.
+  metadataBase: new URL(siteUrl()),
+  title: {
+    default: ROOT_TITLE,
+    // Per-route layouts supply their own title; this frames it consistently.
+    template: `%s | ${SITE_NAME}`,
+  },
+  description: ROOT_DESCRIPTION,
+  applicationName: SITE_NAME,
   manifest: "/manifest.json",
-  applicationName: "TransTTS",
+  alternates: { canonical: "/" },
+  keywords: [
+    "audio transcription",
+    "speech to text",
+    "Whisper AI",
+    "translate to Hindi",
+    "text to speech",
+    "AI voice generator",
+    "video transcription",
+    "subtitle generator",
+  ],
+  authors: [{ name: SITE_NAME }],
+  creator: SITE_NAME,
+  publisher: SITE_NAME,
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: siteUrl(),
+    siteName: SITE_NAME,
+    title: ROOT_TITLE,
+    description: ROOT_DESCRIPTION,
+    // og:image comes from app/opengraph-image.tsx (generated at request time).
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: ROOT_TITLE,
+    description: ROOT_DESCRIPTION,
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
+  // Search Console verification. Set GOOGLE_SITE_VERIFICATION to the token from
+  // the "HTML tag" method; omitted entirely when unset.
+  ...(process.env.GOOGLE_SITE_VERIFICATION
+    ? { verification: { google: process.env.GOOGLE_SITE_VERIFICATION } }
+    : {}),
   appleWebApp: {
     capable: true,
-    title: "TransTTS",
+    title: SITE_NAME,
     statusBarStyle: "default",
   },
   icons: {
@@ -69,6 +125,8 @@ export default function RootLayout({
             __html: `(function(){try{var t=sessionStorage.getItem('transtts_settings_theme');if(t)t=JSON.parse(t);if(t==='auto')t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`,
           }}
         />
+        {/* Organization / WebSite / SoftwareApplication schema for rich results. */}
+        <StructuredData />
       </head>
       <body>
         <div className="bg-grid"></div>
