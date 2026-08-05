@@ -14,6 +14,7 @@ import {
   RefreshIcon, CopyIcon, AlertCircleIcon, UploadIcon, CheckCircleIcon
 } from "@/components/Icons";
 import type { TranscriptSegment } from "@/types";
+import { detectPlatform, PLATFORM_LABELS } from "@/lib/socialPlatforms";
 
 export default function TranscribePage() {
   const [isAuth, setIsAuth] = useState(false);
@@ -25,6 +26,10 @@ export default function TranscribePage() {
   const [segments, setSegments] = usePersistedState<TranscriptSegment[]>("transcribe_segments", []);
   const [detectedLang, setDetectedLang] = usePersistedState("transcribe_detected", "");
   const [duration, setDuration] = usePersistedState("transcribe_duration", 0);
+  const [videoUrl, setVideoUrl] = useState("");
+  const [translateToHindi, setTranslateToHindi] = usePersistedState("transcribe_to_hindi", false);
+  const [hindiText, setHindiText] = usePersistedState("transcribe_hindi", "");
+  const [stage, setStage] = useState("");
   const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -45,6 +50,7 @@ export default function TranscribePage() {
     setFile(null); setLanguage("auto"); setStatus("idle");
     setProgress(0); setTranscript(""); setSegments([]);
     setDetectedLang(""); setDuration(0); setError("");
+    setVideoUrl(""); setHindiText(""); setStage("");
   };
 
   const handleFile = (f: File) => {
@@ -65,23 +71,38 @@ export default function TranscribePage() {
     if (f) handleFile(f);
   }, []);
 
+  // Poll the job row until the background transcription completes. Keeps the
+  // UI responsive: no single long-lived request, real progress from the server.
+  const pollJob = async (jobId: string) => {
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const res = await fetch(`/api/jobs/${jobId}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Lost track of the transcription job.");
+      const job = await res.json();
+
+      if (job.status === "error") {
+        throw new Error("Transcription failed. Please try again.");
+      }
+      if (job.status === "completed") {
+        const segs = typeof job.segments === "string" ? JSON.parse(job.segments) : job.segments || [];
+        return { ...job, segments: segs };
+      }
+      setProgress(Math.max(20, Math.min(95, job.progress || 20)));
+    }
+  };
+
   const handleTranscribe = async () => {
     if (!file) return;
     setStatus("uploading");
     setProgress(10);
     setError("");
 
-    let interval: ReturnType<typeof setInterval> | undefined;
     try {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("language", language);
 
-      setProgress(30);
-      interval = setInterval(() => {
-        setProgress((p) => Math.min(p + 5, 90));
-      }, 800);
-
+      // Fast intake: server validates + stores the file, returns jobId (202).
       const res = await fetch("/api/transcribe", { method: "POST", body: formData });
 
       if (!res.ok) {
@@ -102,12 +123,17 @@ export default function TranscribePage() {
         throw new Error(errorMsg);
       }
 
-      const data = await res.json();
+      const { jobId } = await res.json();
+      setProgress(25);
+      setStage("Transcribing with Whisper AI…");
+
+      const job = await pollJob(jobId);
       setProgress(100);
-      setTranscript(data.text);
-      setSegments(data.segments || []);
-      setDetectedLang(data.language);
-      setDuration(data.duration);
+      setTranscript(job.transcript || "");
+      setSegments(job.segments || []);
+      setDetectedLang(job.language || "");
+      setDuration(job.duration || 0);
+      setHindiText("");
       setStatus("done");
 
       addToHistory({
@@ -117,10 +143,10 @@ export default function TranscribePage() {
         data: {
           fileName: file?.name,
           fileSize: file?.size,
-          language: data.language,
-          duration: data.duration,
-          transcript: data.text,
-          segmentCount: (data.segments || []).length,
+          language: job.language,
+          duration: job.duration,
+          transcript: job.transcript,
+          segmentCount: (job.segments || []).length,
         },
       });
       showToast("Transcription complete!", "success");
@@ -129,8 +155,81 @@ export default function TranscribePage() {
       setStatus("error");
       setProgress(0);
       showToast("Transcription failed", "error");
-    } finally {
-      if (interval) clearInterval(interval);
+    }
+  };
+
+  // Social-media video URL → download → Whisper → (optional) Hindi. All server
+  // work is non-blocking: 202 + jobId, then the same pollJob progress loop.
+  const handleSocialTranscribe = async () => {
+    const platform = detectPlatform(videoUrl.trim());
+    if (!platform) {
+      setError("Paste a valid YouTube, Vimeo, X/Twitter, Facebook, Instagram, or Pinterest video URL.");
+      return;
+    }
+    setStatus("uploading");
+    setProgress(5);
+    setError("");
+    setStage(`Downloading from ${PLATFORM_LABELS[platform]}…`);
+
+    try {
+      const res = await fetch("/api/social-transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: videoUrl.trim(), language, translateToHindi }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Could not start video transcription.");
+
+      // Stage labels track the server's progress bands (0–50 download,
+      // 50–90 transcribe, 90–100 translate).
+      const stagePoll = async (jobId: string) => {
+        for (;;) {
+          await new Promise((r) => setTimeout(r, 1500));
+          const jr = await fetch(`/api/jobs/${jobId}`, { cache: "no-store" });
+          if (!jr.ok) throw new Error("Lost track of the transcription job.");
+          const job = await jr.json();
+          if (job.status === "error") throw new Error(job.errorMsg || "Video transcription failed.");
+          if (job.status === "completed") {
+            const segs = typeof job.segments === "string" ? JSON.parse(job.segments) : job.segments || [];
+            return { ...job, segments: segs };
+          }
+          const p = job.progress || 5;
+          setProgress(Math.max(5, Math.min(97, p)));
+          setStage(
+            p < 50 ? `Downloading from ${PLATFORM_LABELS[platform]}…`
+            : p < 90 ? "Transcribing with Whisper AI…"
+            : "Translating to Hindi…"
+          );
+        }
+      };
+
+      const job = await stagePoll(data.jobId);
+      setProgress(100);
+      setTranscript(job.transcript || "");
+      setSegments(job.segments || []);
+      setDetectedLang(job.language || "");
+      setDuration(job.duration || 0);
+      setHindiText(job.translatedText || "");
+      setStatus("done");
+
+      addToHistory({
+        type: "transcribe",
+        title: `${PLATFORM_LABELS[platform]} video`,
+        status: "completed",
+        data: {
+          fileName: videoUrl.trim(),
+          language: job.language,
+          duration: job.duration,
+          transcript: job.transcript,
+          segmentCount: (job.segments || []).length,
+        },
+      });
+      showToast("Video transcription complete!", "success");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+      setStatus("error");
+      setProgress(0);
+      showToast("Video transcription failed", "error");
     }
   };
 
@@ -285,6 +384,66 @@ export default function TranscribePage() {
                 Auto Detect works best for most audio files
               </div>
 
+              {/* Divider */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "20px 0 16px" }}>
+                <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
+                <span style={{ fontSize: "0.78rem", color: "var(--text-dim)", fontWeight: 600 }}>or transcribe a social-media video</span>
+                <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
+              </div>
+
+              {/* Social video URL */}
+              <div>
+                <label className="form-label" style={{ marginBottom: "6px", fontSize: "0.8rem", fontWeight: 700, color: "var(--text-dim)" }}>
+                  Video URL — YouTube, Vimeo, X, Facebook, Instagram, Pinterest
+                </label>
+                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                  <input
+                    type="url"
+                    className="select-input"
+                    placeholder="https://youtube.com/watch?v=..."
+                    value={videoUrl}
+                    onChange={(e) => setVideoUrl(e.target.value)}
+                    style={{ height: "40px", flex: 1, borderRadius: "10px", fontSize: "0.88rem" }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleSocialTranscribe}
+                    disabled={!detectPlatform(videoUrl.trim())}
+                    style={{ height: "40px", padding: "0 18px", fontSize: "0.88rem", fontWeight: 700, borderRadius: "100px", flexShrink: 0 }}
+                  >
+                    Transcribe Video
+                  </button>
+                </div>
+
+                {/* Platform detection chip */}
+                {videoUrl.trim() && (
+                  <div style={{ marginTop: 8 }}>
+                    {detectPlatform(videoUrl.trim()) ? (
+                      <span className="badge badge-success" style={{ padding: "3px 10px", borderRadius: "100px", fontSize: "0.75rem" }}>
+                        Detected: {PLATFORM_LABELS[detectPlatform(videoUrl.trim())!]}
+                      </span>
+                    ) : (
+                      <span className="badge badge-error" style={{ padding: "3px 10px", borderRadius: "100px", fontSize: "0.75rem" }}>
+                        Unsupported or incomplete URL
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: "0.82rem", color: "var(--text-dim)", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={translateToHindi}
+                    onChange={(e) => setTranslateToHindi(e.target.checked)}
+                  />
+                  Convert transcript to Hindi automatically (when the video isn&apos;t already in Hindi)
+                </label>
+                <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: 6 }}>
+                  Public videos only. Downloading from some platforms may be against their Terms of Service — use content you have rights to.
+                </div>
+              </div>
+
               {/* Error Badge */}
               {error && (
                 <div className="badge badge-error" style={{ padding: "10px 14px", fontSize: "0.85rem", marginTop: 14, display: "inline-flex", alignItems: "center", gap: 6, borderRadius: "10px", width: "100%" }}>
@@ -315,9 +474,9 @@ export default function TranscribePage() {
           <div className="fade-in" style={{ marginTop: 24, maxWidth: "680px", margin: "24px auto 0" }}>
             <div className="glass-card" style={{ textAlign: "center", padding: "40px 28px", borderRadius: "20px" }}>
               <div className="spinner" style={{ margin: "0 auto 16px", width: 34, height: 34 }}></div>
-              <h3 style={{ marginBottom: 8, fontSize: "1.2rem", fontWeight: 700 }}>Transcribing with Whisper AI...</h3>
+              <h3 style={{ marginBottom: 8, fontSize: "1.2rem", fontWeight: 700 }}>{stage || "Transcribing with Whisper AI..."}</h3>
               <p style={{ color: "var(--text-dim)", marginBottom: 20, fontSize: "0.9rem" }}>
-                Converting speech to text with timestamps. Please wait...
+                Processing continues in the background — you can keep this tab open and watch live progress.
               </p>
               <ProgressTracker progress={progress} status={status} />
             </div>
@@ -388,6 +547,25 @@ export default function TranscribePage() {
                 <p style={{ lineHeight: 1.8, fontSize: "0.95rem", color: "var(--text)" }}>{transcript}</p>
               )}
             </div>
+
+            {/* Hindi translation card (social-video flow with translate enabled) */}
+            {hindiText && (
+              <div className="glass-card" style={{ marginBottom: 16, padding: "24px", borderRadius: "16px" }}>
+                <div className="edit-bar" style={{ marginBottom: "14px" }}>
+                  <h3 style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, margin: 0, fontSize: "1.1rem", fontWeight: 700 }}>
+                    <GlobeIcon size={18} color="#FF8000" />
+                    <span>Hindi Translation</span>
+                  </h3>
+                  <button className="btn btn-ghost btn-sm" onClick={() => {
+                    navigator.clipboard.writeText(hindiText);
+                    showToast("Hindi translation copied!", "success");
+                  }} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <CopyIcon size={14} color="currentColor" /> Copy
+                  </button>
+                </div>
+                <p style={{ lineHeight: 1.9, fontSize: "1rem", color: "var(--text)" }} lang="hi">{hindiText}</p>
+              </div>
+            )}
 
             {/* Segments card */}
             {segments.length > 0 && (

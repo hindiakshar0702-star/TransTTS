@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { guard } from "@/lib/api-guard";
 import { getSessionUser } from "@/lib/auth";
+import { translateText, isValidLangCode } from "@/lib/translate";
 
 export async function POST(req: NextRequest) {
   let jobId: string | null = null;
@@ -27,9 +28,8 @@ export async function POST(req: NextRequest) {
 
     // Language codes are concatenated into an outbound URL — restrict them to
     // ISO-639-style tokens so they cannot inject extra query parameters.
-    const LANG_RE = /^[a-z]{2}(-[A-Za-z]{2,4})?$/;
     const src = sourceLang === "auto" || !sourceLang ? "en" : String(sourceLang);
-    if (!LANG_RE.test(src) || !LANG_RE.test(String(targetLang))) {
+    if (!isValidLangCode(src) || !isValidLangCode(String(targetLang))) {
       return NextResponse.json({ error: "Invalid language code." }, { status: 400 });
     }
 
@@ -47,42 +47,21 @@ export async function POST(req: NextRequest) {
     });
     jobId = job.id;
 
-    // Use FREE MyMemory Translation API (src/targetLang validated above)
-    const langPair = encodeURIComponent(`${src}|${targetLang}`);
-
-    const chunks: string[] = [];
-    for (let i = 0; i < text.length; i += 4500) {
-      chunks.push(text.substring(i, i + 4500));
+    // Shared MyMemory-backed utility (also used by the social-transcribe pipeline).
+    const outcome = await translateText(text, src, String(targetLang));
+    if (!outcome.ok) {
+      // Upstream (MyMemory) reasons — e.g. free-tier quota exhausted — are
+      // safe and useful to show the user, unlike internal errors.
+      await prisma.job.update({
+        where: { id: jobId },
+        data: { status: "error", errorMsg: outcome.detail },
+      }).catch(() => {});
+      return NextResponse.json(
+        { error: `Translation failed: ${outcome.detail}` },
+        { status: 502 }
+      );
     }
-
-    const translatedChunks: string[] = [];
-    for (const chunk of chunks) {
-      const encoded = encodeURIComponent(chunk);
-      const url = `https://api.mymemory.translated.net/get?q=${encoded}&langpair=${langPair}`;
-      const res = await fetch(url);
-      const data = await res.json();
-
-      // MyMemory returns responseStatus as a number OR a string.
-      if (Number(data.responseStatus) === 200 && data.responseData?.translatedText) {
-        translatedChunks.push(data.responseData.translatedText);
-      } else {
-        // Upstream (MyMemory) reasons — e.g. free-tier quota exhausted — are
-        // safe and useful to show the user, unlike internal errors.
-        const detail = typeof data.responseDetails === "string" && data.responseDetails
-          ? data.responseDetails
-          : "the translation service is temporarily unavailable";
-        await prisma.job.update({
-          where: { id: jobId },
-          data: { status: "error", errorMsg: detail },
-        }).catch(() => {});
-        return NextResponse.json(
-          { error: `Translation failed: ${detail}` },
-          { status: 502 }
-        );
-      }
-    }
-
-    const translatedText = translatedChunks.join(" ");
+    const translatedText = outcome.text;
 
     // Save to DB
     await prisma.job.update({
