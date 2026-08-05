@@ -28,8 +28,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   providers: [
     Google({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      // Auth.js v5's own convention is AUTH_GOOGLE_ID / AUTH_GOOGLE_SECRET,
+      // which it reads automatically. GOOGLE_CLIENT_ID / _SECRET is the older
+      // name this project started with, so both are accepted — passing an
+      // undefined-but-present empty string here would otherwise silently
+      // override the auto-detected value and Google rejects the request with
+      // "Missing required parameter: client_id".
+      clientId: process.env.AUTH_GOOGLE_ID || process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.AUTH_GOOGLE_SECRET || process.env.GOOGLE_CLIENT_SECRET,
       // Ask Google to prompt account selection so switching accounts works.
       authorization: { params: { prompt: "select_account" } },
     }),
