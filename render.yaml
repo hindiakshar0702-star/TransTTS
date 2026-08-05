@@ -1,0 +1,104 @@
+# Render blueprint: web service + managed Postgres.
+#
+# Render runs the container as a long-lived process, which this app requires —
+# transcription continues in the background after the HTTP response returns,
+# uploads are written to disk, and yt-dlp is spawned as a child process. None
+# of that survives on a serverless platform.
+#
+# Deploy: push this file, then "New +" -> "Blueprint" in the Render dashboard.
+# Secrets marked sync:false must be filled in there; they are never committed.
+
+databases:
+  - name: transtts-db
+    databaseName: transtts
+    plan: free # upgrade before real traffic — the free tier expires
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: transtts
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter # free tier sleeps and has no persistent disk
+    region: singapore # closest to the primary audience; change if needed
+    healthCheckPath: /api/health
+    autoDeploy: true
+
+    # NEXT_PUBLIC_* values are inlined during the build, so the origin has to be
+    # passed as a build argument, not only as a runtime variable.
+    dockerBuildArgs:
+      NEXT_PUBLIC_APP_URL:
+        fromService:
+          type: web
+          name: transtts
+          property: host
+          # Resolves to https://<service>.onrender.com; replace with a custom
+          # domain once one is attached (and update AUTH_URL to match).
+
+    # TTS clips are read back from disk after they are generated, so this
+    # directory has to outlive a deploy. Uploads are scratch and stay ephemeral.
+    disk:
+      name: transtts-media
+      mountPath: /app/generated
+      sizeGB: 1
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: DATABASE_URL
+        fromDatabase:
+          name: transtts-db
+          property: connectionString
+      # Prisma migrations need a direct (non-pooled) connection.
+      - key: DIRECT_URL
+        fromDatabase:
+          name: transtts-db
+          property: connectionString
+
+      # Public origin. Must match the deployed URL exactly or OAuth callbacks
+      # and canonical URLs break.
+      - key: NEXT_PUBLIC_APP_URL
+        fromService:
+          type: web
+          name: transtts
+          property: host
+      - key: AUTH_URL
+        fromService:
+          type: web
+          name: transtts
+          property: host
+
+      # Session signing key — generated once by Render, never in the repo.
+      - key: AUTH_SECRET
+        generateValue: true
+
+      # --- Secrets to fill in the dashboard ---
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      # Whisper transcription. Groq has a free tier; either one works.
+      - key: GROQ_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+
+      # --- Optional ---
+      # Email delivery for OTP, password reset and the contact form. Without a
+      # transport these messages are only logged, so users never receive them.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: CONTACT_TO
+        sync: false
+      # Search Console verification token ("HTML tag" method).
+      - key: GOOGLE_SITE_VERIFICATION
+        sync: false
