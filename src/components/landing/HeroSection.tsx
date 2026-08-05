@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import Link from "next/link";
-import { MicIcon, GlobeIcon, VolumeIcon, PlayIcon, ArrowRightIcon, FileTextIcon } from "./Icons";
+import { MicIcon, GlobeIcon, VolumeIcon, ArrowRightIcon, FileTextIcon } from "./Icons";
 
 export default function HeroSection() {
   const leftRef = useRef<HTMLDivElement>(null);
@@ -46,13 +46,9 @@ export default function HeroSection() {
               </p>
 
               <div className="hero-actions">
-                <Link href="/transcribe" className="hero-btn-primary">
-                  <span>Start Free</span>
+                <Link href="/dashboard" className="hero-btn-primary">
+                  <span>Get Started</span>
                   <ArrowRightIcon size={16} color="#0a0a0a" />
-                </Link>
-                <Link href="/login" className="hero-btn-secondary">
-                  <PlayIcon size={12} color="#1a1a1a" />
-                  <span>See How It Works</span>
                 </Link>
               </div>
             </div>
@@ -119,7 +115,7 @@ export default function HeroSection() {
                     <div style={{ display: "flex", alignItems: "center" }}>
                       <img src="/logo.svg" alt="TransTTS" style={{ height: 16, width: "auto" }} />
                     </div>
-                    <div style={{ fontSize: "0.6rem", color: "#999" }}>● Online</div>
+                    <div style={{ fontSize: "0.6rem", color: "#047857" }}>● Online</div>
                   </div>
 
                   {/* Main stat */}

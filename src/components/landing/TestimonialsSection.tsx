@@ -75,7 +75,7 @@ export default function TestimonialsSection() {
           </h2>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
+        <div className="testimonials-track" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
           {testimonials.map((t, i) => (
             <BentoCard key={t.name} className="testimonial-card" delay={i * 0.1}>
               <div className="testimonial-stars" style={{ display: "flex", gap: 3, marginBottom: 16 }}>

@@ -155,7 +155,7 @@ export default function BentoGrid() {
 
           {/* Card 6: TTS Voice Generator */}
           <BentoCard span={12} delay={0}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 40, alignItems: "center" }}>
+            <div className="bento-tts-split" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 40, alignItems: "center" }}>
               <div>
                 <div className="feature-icon-circle" style={{ background: "rgba(245,158,11,0.08)" }}>
                   <VolumeIcon size={22} color="#f59e0b" />
