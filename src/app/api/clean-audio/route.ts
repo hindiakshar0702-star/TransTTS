@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { guard } from "@/lib/api-guard";
+import { getSessionUser } from "@/lib/auth";
 import { randomUUID } from "crypto";
 import fs from "fs";
 import path from "path";
@@ -16,6 +17,14 @@ export async function POST(req: NextRequest) {
   // Spawns an external process — rate limit hard.
   const blocked = guard(req, "clean-audio", { limit: 10, windowMs: 60_000 });
   if (blocked) return blocked;
+
+  // This route spawns a Python process with a 120s timeout, so it is a CPU
+  // amplification target. Every other cost-bearing route already requires a
+  // session; this one must too.
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) {
+    return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
+  }
 
   try {
     const formData = await req.formData();

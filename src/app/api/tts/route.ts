@@ -5,6 +5,7 @@ import { generateId } from "@/lib/utils";
 import { getGeneratedDir } from "@/lib/server-utils";
 import { guard } from "@/lib/api-guard";
 import { getSessionUser } from "@/lib/auth";
+import { maybeSweepMedia } from "@/lib/media-cleanup";
 import fs from "fs/promises";
 import path from "path";
 
@@ -40,6 +41,10 @@ export async function POST(req: NextRequest) {
   if (!sessionUser) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
+
+  // Opportunistic disk housekeeping — throttled internally to once an hour and
+  // never awaited, so it adds nothing to this request's latency.
+  maybeSweepMedia();
 
   try {
     const { text, voice, speed } = await req.json();

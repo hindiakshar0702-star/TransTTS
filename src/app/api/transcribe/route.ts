@@ -10,6 +10,7 @@ import {
   safeTranscribeError,
   transcribeFileForJob,
 } from "@/lib/transcription";
+import { maybeSweepMedia } from "@/lib/media-cleanup";
 import fs from "fs";
 import path from "path";
 
@@ -37,6 +38,10 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+
+  // Opportunistic disk housekeeping — throttled internally to once an hour and
+  // never awaited, so it adds nothing to this request's latency.
+  maybeSweepMedia();
 
   let jobId: string | null = null;
   try {
