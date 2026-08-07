@@ -1,7 +1,16 @@
+import { createHash } from "crypto";
+import prisma from "@/lib/prisma";
+
 /**
  * Shared text-translation utility (MyMemory free API) — used by the
  * /api/translate route and the social-transcribe pipeline's English→Hindi step.
- * Node-only (network I/O).
+ * Node-only (network I/O, database).
+ *
+ * Results are cached. Translation is deterministic for a given
+ * (text, source, target), and MyMemory's free tier has a small daily quota, so
+ * re-translating text the service has already seen wastes both quota and the
+ * user's time. Only a hash of the input and the result are stored — the source
+ * text never lands in the cache table.
  */
 
 const LANG_RE = /^[a-z]{2}(-[A-Za-z]{2,4})?$/;
@@ -15,6 +24,17 @@ export interface TranslateOutcome {
   text: string;
   /** Upstream failure detail (safe to show users) when ok=false. */
   detail?: string;
+  /** True when the result came from the cache instead of the upstream API. */
+  cached?: boolean;
+}
+
+/**
+ * Cache key for a translation request. Hashing means the cache table holds no
+ * readable source text, and it keeps the primary key a fixed size regardless of
+ * how long the input was.
+ */
+export function translationCacheKey(text: string, src: string, target: string): string {
+  return createHash("sha256").update(`${src}|${target}|${text}`).digest("hex");
 }
 
 /**
@@ -31,6 +51,24 @@ export async function translateText(
   const src = sourceLang === "auto" || !sourceLang ? "en" : sourceLang;
   if (!isValidLangCode(src) || !isValidLangCode(targetLang)) {
     return { ok: false, text: "", detail: "invalid language code" };
+  }
+
+  // Cache hit: skip the upstream call entirely. A cache failure must never
+  // block a translation, so every cache interaction is best-effort.
+  const cacheKey = translationCacheKey(text, src, targetLang);
+  try {
+    const hit = await prisma.translationCache.findUnique({ where: { key: cacheKey } });
+    if (hit) {
+      void prisma.translationCache
+        .update({
+          where: { key: cacheKey },
+          data: { lastUsedAt: new Date(), hitCount: { increment: 1 } },
+        })
+        .catch(() => {});
+      return { ok: true, text: hit.translatedText, cached: true };
+    }
+  } catch (err) {
+    console.error("[translate] cache read failed:", err);
   }
 
   const langPair = encodeURIComponent(`${src}|${targetLang}`);
@@ -63,5 +101,19 @@ export async function translateText(
     }
   }
 
-  return { ok: true, text: translated.join(" ") };
+  const result = translated.join(" ");
+
+  // Store for next time. Concurrent requests for the same text can race here,
+  // so an existing key is treated as success rather than an error.
+  try {
+    await prisma.translationCache.upsert({
+      where: { key: cacheKey },
+      create: { key: cacheKey, translatedText: result, engine: "MyMemory (Free)" },
+      update: { lastUsedAt: new Date() },
+    });
+  } catch (err) {
+    console.error("[translate] cache write failed:", err);
+  }
+
+  return { ok: true, text: result };
 }

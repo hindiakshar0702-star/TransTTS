@@ -110,6 +110,11 @@ model Job {
   text       String?
   voice      String?
   audioUrl   String?
+  // Hash of (text + voice + rate). Lets a repeat request reuse the audio this
+  // job already produced instead of paying for synthesis again. Scoped per
+  // user by the lookup, so one account clearing its history can never delete
+  // audio another account is pointing at.
+  cacheKey   String?
 
   errorMsg   String?
   createdAt  DateTime @default(now())
@@ -118,4 +123,22 @@ model Job {
   // Jobs list queries filter by owner (+ optional type) and sort by newest.
   @@index([userId, createdAt(sort: Desc)])
   @@index([userId, type])
+  // TTS cache lookup, and the cleanup sweep's audioUrl -> job resolution.
+  @@index([userId, cacheKey])
+  @@index([audioUrl])
+}
+
+/// Translation results keyed by a hash of (text + source + target).
+/// Deterministic for a given input, so this is shared across users — only the
+/// hash and the result are stored, never the source text.
+model TranslationCache {
+  key            String   @id
+  translatedText String
+  engine         String?
+  createdAt      DateTime @default(now())
+  /// Bumped on every reuse so a sweep can evict entries nobody asks for.
+  lastUsedAt     DateTime @default(now())
+  hitCount       Int      @default(0)
+
+  @@index([lastUsedAt])
 }

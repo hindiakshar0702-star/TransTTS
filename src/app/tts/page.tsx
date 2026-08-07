@@ -87,6 +87,27 @@ function TTSContent() {
     setIsPlaying(false); setCurrentTime(0); setAudioDuration(0);
   };
 
+  // Wait for a background synthesis job to finish. Bounded so a job that dies
+  // without updating its row can never leave the UI polling forever.
+  const pollTtsJob = async (jobId: string): Promise<string> => {
+    const MAX_ATTEMPTS = 60; // ~90s at 1.5s intervals
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      await new Promise((r) => setTimeout(r, 1500));
+
+      const res = await fetch(`/api/jobs/${jobId}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Lost track of the voice generation job.");
+      const job = await res.json();
+
+      if (job.status === "error") {
+        throw new Error(job.errorMsg || "Voice generation failed.");
+      }
+      if (job.status === "completed" && job.audioUrl) {
+        return job.audioUrl as string;
+      }
+    }
+    throw new Error("Voice generation is taking longer than expected. Please try again.");
+  };
+
   const handleGenerate = async () => {
     if (!text.trim()) return;
     setStatus("generating");
@@ -115,7 +136,16 @@ function TTSContent() {
       }
 
       const data = await res.json();
-      setAudioUrl(data.audioUrl);
+
+      // The server returns 202 + jobId and synthesises in the background; a
+      // repeat of an identical request comes back already completed, so only
+      // poll when there is something still running.
+      const finalUrl =
+        data.status === "completed" && data.audioUrl
+          ? data.audioUrl
+          : await pollTtsJob(data.jobId);
+
+      setAudioUrl(finalUrl);
       setStatus("done");
 
       const selectedVoice = VOICES.find((v) => v.id === voice);
@@ -126,7 +156,7 @@ function TTSContent() {
         data: {
           text: text.substring(0, 500),
           voice: selectedVoice?.name || voice,
-          audioUrl: data.audioUrl,
+          audioUrl: finalUrl,
         },
       });
       showToast("Voice generated!", "success");

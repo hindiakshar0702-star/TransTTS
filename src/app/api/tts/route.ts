@@ -1,39 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
-import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 import prisma from "@/lib/prisma";
-import { generateId } from "@/lib/utils";
-import { getGeneratedDir } from "@/lib/server-utils";
 import { guard } from "@/lib/api-guard";
 import { getSessionUser } from "@/lib/auth";
 import { maybeSweepMedia } from "@/lib/media-cleanup";
-import fs from "fs/promises";
-import path from "path";
+import {
+  VOICES,
+  DEFAULT_VOICE_KEY,
+  MAX_TTS_CHARS,
+  ttsCacheKey,
+  findCachedAudio,
+  synthesizeForJob,
+} from "@/lib/tts";
 
-const VOICES = new Map<string, string>([
-  ["hi-female", "hi-IN-SwaraNeural"],
-  ["hi-male", "hi-IN-MadhurNeural"],
-  ["en-female", "en-US-JennyNeural"],
-  ["en-male", "en-US-GuyNeural"],
-  ["en-uk-female", "en-GB-SoniaNeural"],
-  ["en-uk-male", "en-GB-RyanNeural"],
-  ["es-female", "es-ES-ElviraNeural"],
-  ["fr-female", "fr-FR-DeniseNeural"],
-  ["de-female", "de-DE-KatjaNeural"],
-  ["ja-female", "ja-JP-NanamiNeural"],
-  ["ko-female", "ko-KR-SunHiNeural"],
-  ["ar-male", "ar-SA-HamedNeural"],
-  ["pt-female", "pt-BR-FranciscaNeural"],
-  ["bn-female", "bn-IN-TanishaaNeural"],
-  ["ta-female", "ta-IN-PallaviNeural"],
-  ["te-female", "te-IN-ShrutiNeural"],
-  ["mr-female", "mr-IN-AarohiNeural"],
-  ["gu-female", "gu-IN-DhwaniNeural"],
-  ["ur-male", "ur-PK-AsadNeural"],
-]);
+export const runtime = "nodejs";
 
+/**
+ * Non-blocking speech synthesis.
+ *
+ * Synthesis takes seconds, so the request no longer waits for it: this handler
+ * validates, creates the job row, starts the work in the background and returns
+ * 202 with a jobId. The client polls GET /api/jobs/:id, exactly as the
+ * transcription flow does.
+ *
+ * A repeat of an identical request (same text, voice and rate) short-circuits
+ * to the audio the user already has, and returns 200 instead of 202 so the
+ * client can skip polling entirely.
+ */
 export async function POST(req: NextRequest) {
-  let jobId: string | null = null;
-
   const blocked = guard(req, "tts", { limit: 20, windowMs: 60_000 });
   if (blocked) return blocked;
 
@@ -42,101 +35,103 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
-  // Opportunistic disk housekeeping — throttled internally to once an hour and
-  // never awaited, so it adds nothing to this request's latency.
+  // Opportunistic disk housekeeping — throttled internally, never awaited.
   maybeSweepMedia();
 
+  let jobId: string | null = null;
   try {
     const { text, voice, speed } = await req.json();
 
-    if (!text) {
+    if (typeof text !== "string" || !text.trim()) {
       return NextResponse.json({ error: "No text provided" }, { status: 400 });
     }
-
-    if (text.length > 5000) {
-      return NextResponse.json({ error: "Text too long. Maximum 5000 characters." }, { status: 400 });
+    if (text.length > MAX_TTS_CHARS) {
+      return NextResponse.json(
+        { error: `Text too long. Maximum ${MAX_TTS_CHARS} characters.` },
+        { status: 400 }
+      );
     }
 
-    // Clamp speed to the slider's allowed range; ignore non-numeric input
+    // Clamp speed to the slider's allowed range; ignore non-numeric input.
     const rate =
       typeof speed === "number" && isFinite(speed)
         ? Math.min(2.0, Math.max(0.5, speed))
         : 1.0;
 
-    const msVoice = (typeof voice === "string" && VOICES.has(voice))
-      ? (VOICES.get(voice) as string)
-      : (VOICES.get("hi-female") as string);
+    const msVoice =
+      typeof voice === "string" && VOICES.has(voice)
+        ? (VOICES.get(voice) as string)
+        : (VOICES.get(DEFAULT_VOICE_KEY) as string);
 
-    // Create job in DB
+    const cacheKey = ttsCacheKey(text, msVoice, rate);
+
+    // Already generated this exact clip and the file is still on disk — hand
+    // it back without paying for synthesis again.
+    const cached = await findCachedAudio(sessionUser.id, cacheKey);
+    if (cached) {
+      const job = await prisma.job.create({
+        data: {
+          userId: sessionUser.id,
+          type: "tts",
+          title: text.substring(0, 80),
+          status: "completed",
+          progress: 100,
+          text: text.substring(0, 2000),
+          voice: msVoice,
+          audioUrl: cached,
+          cacheKey,
+        },
+      });
+      return NextResponse.json({
+        jobId: job.id,
+        status: "completed",
+        audioUrl: cached,
+        voice: msVoice,
+        cached: true,
+      });
+    }
+
     const job = await prisma.job.create({
       data: {
         userId: sessionUser.id,
         type: "tts",
         title: text.substring(0, 80),
         status: "processing",
+        progress: 10,
         text: text.substring(0, 2000),
         voice: msVoice,
+        cacheKey,
       },
     });
     jobId = job.id;
 
-    const generatedDir = getGeneratedDir();
-    const fileId = generateId();
-    const tempDir = path.normalize(path.join(generatedDir, fileId));
-    
-    // Verify path traversal defense-in-depth
-    if (!tempDir.startsWith(generatedDir)) {
-      return NextResponse.json({ error: "Invalid generated directory path" }, { status: 400 });
-    }
-    
-    await fs.mkdir(tempDir, { recursive: true });
-
-    const tts = new MsEdgeTTS();
-    await tts.setMetadata(msVoice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-    await tts.toFile(tempDir, text, { rate });
-
-    const generatedFile = path.normalize(path.join(tempDir, "audio.mp3"));
-    const finalPath = path.normalize(path.join(generatedDir, `${fileId}.mp3`));
-
-    // Verify path traversal defense-in-depth
-    if (!generatedFile.startsWith(tempDir) || !finalPath.startsWith(generatedDir)) {
-      return NextResponse.json({ error: "Invalid file paths" }, { status: 400 });
-    }
-
-    const fileExists = await fs.access(generatedFile).then(() => true).catch(() => false);
-    if (fileExists) {
-      await fs.rename(generatedFile, finalPath);
-      try { await fs.rmdir(tempDir); } catch { /* ignore */ }
-    } else {
-      throw new Error("Audio file was not generated");
-    }
-
-    const audioUrl = `/api/tts/audio/${fileId}`;
-
-    // Save to DB
-    await prisma.job.update({
-      where: { id: jobId },
-      data: { status: "completed", progress: 100, audioUrl },
+    // Fire-and-forget: the job row carries the outcome.
+    void synthesizeForJob(job.id, text, msVoice, rate, cacheKey).catch(async (err) => {
+      const raw = err instanceof Error ? err.message : "";
+      console.error("TTS error:", err);
+      await prisma.job
+        .update({
+          where: { id: job.id },
+          data: { status: "error", errorMsg: raw || "TTS generation failed" },
+        })
+        .catch(() => {});
     });
 
-    return NextResponse.json({
-      id: fileId,
-      audioUrl,
-      voice: msVoice,
-      textLength: text.length,
-    });
+    return NextResponse.json(
+      { jobId: job.id, status: "processing", voice: msVoice, cached: false },
+      { status: 202 }
+    );
   } catch (error: unknown) {
-    console.error("TTS error:", error);
+    console.error("TTS intake error:", error);
     const raw = error instanceof Error ? error.message : "";
 
     if (jobId) {
-      await prisma.job.update({
-        where: { id: jobId },
-        data: { status: "error", errorMsg: raw || "TTS generation failed" },
-      }).catch(() => {});
+      await prisma.job
+        .update({ where: { id: jobId }, data: { status: "error", errorMsg: raw || "TTS failed" } })
+        .catch(() => {});
     }
 
-    // Generic message to the client; full detail is logged / stored server-side.
+    // Generic message to the client; full detail stays in the log / job row.
     return NextResponse.json({ error: "Voice generation failed. Please try again." }, { status: 500 });
   }
 }
