@@ -40,6 +40,10 @@ jobs:
       NEXT_PUBLIC_APP_URL: http://localhost:3000
       # Lets the OTP suite read codes back instead of needing a mail/SMS provider.
       OTP_TEST_MODE: "1"
+      # Google's consent screen cannot be driven from Playwright, so the suite
+      # signs in through the test-login provider. Both this and NODE_ENV are
+      # checked before that provider is registered — never set it in production.
+      AUTH_TEST_MODE: "1"
       NEXT_TELEMETRY_DISABLED: "1"
 
     steps:

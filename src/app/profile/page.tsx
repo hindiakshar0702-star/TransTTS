@@ -1,9 +1,6 @@
 "use client";
 import { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
-import { signIn } from "next-auth/react";
-import { validatePassword } from "@/lib/password";
-import PasswordEyeToggle from "@/components/PasswordEyeToggle";
 import Sidebar from "@/components/Sidebar";
 import LanguageSelect from "@/components/LanguageSelect";
 import { useToast } from "@/components/Toast";
@@ -50,11 +47,6 @@ function ProfileContent() {
   const [confirmDetails, setConfirmDetails] = useState(true);
   const [twoFactor, setTwoFactor] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [currentPass, setCurrentPass] = useState("");
-  const [newPass, setNewPass] = useState("");
-  const [confirmPass, setConfirmPass] = useState("");
-  const [changingPass, setChangingPass] = useState(false);
-  const [showPasswords, setShowPasswords] = useState(false);
   const avatarFileRef = useRef<HTMLInputElement>(null);
 
   // Load the persisted profile from the server (source of truth is the DB, not
@@ -89,49 +81,6 @@ function ProfileContent() {
     };
   }, []);
 
-  const handleChangePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentPass) {
-      showToast("Please enter your current password", "error");
-      return;
-    }
-    // Enforce the shared password policy client-side (server re-checks).
-    const pw = validatePassword(newPass, userEmail);
-    if (!pw.ok) {
-      showToast(pw.errors[0], "error");
-      return;
-    }
-    if (newPass !== confirmPass) {
-      showToast("New password and confirm password do not match", "error");
-      return;
-    }
-    setChangingPass(true);
-    try {
-      const res = await fetch("/api/auth/change-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ currentPassword: currentPass, newPassword: newPass }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        showToast(data.error || "Could not change password.", "error");
-        return;
-      }
-      // The password change revoked all sessions (this one included). Re-mint
-      // THIS device's session with the new password so the user stays signed in.
-      if (data.email) {
-        await signIn("credentials", { email: data.email, password: newPass, redirect: false });
-      }
-      showToast("Password updated. Other devices have been signed out.", "success");
-      setCurrentPass("");
-      setNewPass("");
-      setConfirmPass("");
-    } catch {
-      showToast("Network error. Please try again.", "error");
-    } finally {
-      setChangingPass(false);
-    }
-  };
 
   // Revoke every session for this account (bumps User.tokenVersion server-side),
   // then send the user back to /login since the current cookie is now dead too.
@@ -653,92 +602,19 @@ function ProfileContent() {
                 </button>
               </div>
 
-              {/* Change Password Sub-form */}
-              <form onSubmit={handleChangePassword} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
-                  <LockIcon size={16} color="var(--accent)" /> Change Password
-                </div>
-
-                <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label" style={{ fontWeight: 700, fontSize: "0.8rem" }}>Current Password</label>
-                  <div style={{ position: "relative" }}>
-                    <input
-                      type={showPasswords ? "text" : "password"}
-                      className="text-input"
-                      value={currentPass}
-                      onChange={(e) => setCurrentPass(e.target.value)}
-                      placeholder="••••••••"
-                      autoComplete="current-password"
-                      disabled={changingPass}
-                      style={{ paddingRight: "40px", width: "100%" }}
-                    />
-                    <PasswordEyeToggle shown={showPasswords} onToggle={() => setShowPasswords((s) => !s)} />
+              {/* Sign-in method — Google only, so there is no password to manage. */}
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "14px 16px", borderRadius: "12px", background: "var(--glass)", border: "1px solid var(--border)" }}>
+                <LockIcon size={16} color="var(--accent)" />
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: "0.85rem", color: "var(--text)", marginBottom: 4 }}>
+                    Signed in with Google
+                  </div>
+                  <div style={{ fontSize: "0.8rem", color: "var(--text-dim)", lineHeight: 1.6 }}>
+                    TransTTS has no password of its own — your Google account controls access.
+                    Manage it from your Google security settings.
                   </div>
                 </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label" style={{ fontWeight: 700, fontSize: "0.8rem" }}>New Password</label>
-                    <div style={{ position: "relative" }}>
-                      <input
-                        type={showPasswords ? "text" : "password"}
-                        className="text-input"
-                        value={newPass}
-                        onChange={(e) => setNewPass(e.target.value)}
-                        placeholder="••••••••"
-                        autoComplete="new-password"
-                        minLength={8}
-                        disabled={changingPass}
-                        style={{ paddingRight: "40px", width: "100%" }}
-                      />
-                      <PasswordEyeToggle shown={showPasswords} onToggle={() => setShowPasswords((s) => !s)} />
-                    </div>
-                  </div>
-
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label" style={{ fontWeight: 700, fontSize: "0.8rem" }}>Confirm Password</label>
-                    <div style={{ position: "relative" }}>
-                      <input
-                        type={showPasswords ? "text" : "password"}
-                        className="text-input"
-                        value={confirmPass}
-                        onChange={(e) => setConfirmPass(e.target.value)}
-                        placeholder="••••••••"
-                        autoComplete="new-password"
-                        minLength={8}
-                        disabled={changingPass}
-                        style={{ paddingRight: "40px", width: "100%" }}
-                      />
-                      <PasswordEyeToggle shown={showPasswords} onToggle={() => setShowPasswords((s) => !s)} />
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  className="btn btn-secondary"
-                  disabled={changingPass}
-                  style={{
-                    height: "40px",
-                    marginTop: "4px",
-                    borderRadius: "100px",
-                    fontWeight: 700,
-                    fontSize: "0.85rem",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 6,
-                    opacity: changingPass ? 0.6 : 1,
-                    cursor: changingPass ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {changingPass ? (
-                    <><div className="spinner" style={{ width: 14, height: 14 }} />Updating…</>
-                  ) : (
-                    <><LockIcon size={14} color="currentColor" /><span>Update Password</span></>
-                  )}
-                </button>
-              </form>
+              </div>
             </div>
 
           </div>

@@ -24,9 +24,15 @@ test.describe("Accessibility (a11y) Audits", () => {
       });
 
       await page.goto(pageInfo.path);
-      // Wait for page load
-      await page.waitForLoadState("domcontentloaded");
-      
+
+      // Wait for the page to be STYLED, not merely parsed. Running axe at
+      // domcontentloaded audited a flash of unstyled content — before the
+      // stylesheet applied, cards had no background and text sat over the dark
+      // body, so contrast checks failed intermittently on whichever page had
+      // the most secondary text. networkidle lets the CSS settle first.
+      await page.waitForLoadState("networkidle");
+      await page.locator("main, .landing-page").first().waitFor({ state: "visible" });
+
       // Run accessibility audit
       const results = await new AxeBuilder({ page })
         .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])

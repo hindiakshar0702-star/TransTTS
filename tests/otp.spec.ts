@@ -23,14 +23,9 @@ function headers(ip: string, extra: Record<string, string> = {}) {
 
 async function registerUser(request: APIRequestContext, ip: string) {
   const email = `otp_${Date.now()}_${rnd()}@test.dev`;
-  const res = await request.post("/api/auth/register", {
-    headers: headers(ip),
-    data: { email, password: "Test@1234Pw", name: "OTP Tester" },
-  });
-  expect(res.status(), "register should create account").toBe(201);
-  // Register no longer auto-sessions (Auth.js v5) — sign in so the OTP routes,
-  // which read getSessionUser(), see an authenticated user.
-  await signInApi(request, email, "Test@1234Pw", headers(ip));
+  // The account is created on first sign-in — the OTP routes read
+  // getSessionUser(), so they need a real session behind the request.
+  await signInApi(request, email, headers(ip));
   return { email };
 }
 

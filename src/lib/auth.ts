@@ -5,13 +5,11 @@ import { auth } from "@/auth";
  * Node-only auth helpers bridging the app to Auth.js v5. `getSessionUser`
  * reads the Auth.js session (JWT cookie) and re-resolves it to a live DB user,
  * so every existing API route keeps its `getSessionUser()` call unchanged.
- * Password hashing lives in `@/lib/password-hash`; do NOT import this file
- * (prisma) from the edge middleware — it uses `@/auth.config` instead.
+ *
+ * There is no password hashing here any more: Google is the only sign-in
+ * method, so the app stores no credentials. Do NOT import this file (prisma)
+ * from the edge middleware — it uses `@/auth.config` instead.
  */
-
-// Re-exported for back-compat with existing importers (register / reset /
-// change-password). The implementation now lives in password-hash.ts.
-export { hashPassword, verifyPassword } from "@/lib/password-hash";
 
 export interface SessionUser {
   id: string;

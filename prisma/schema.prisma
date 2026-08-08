@@ -12,12 +12,11 @@ model User {
   id           String   @id @default(uuid())
   email        String   @unique
   name         String?
-  // Null for accounts created via OAuth only (no local password).
-  passwordHash String?
   // "user" | "admin" — SQLite has no enums, enforce in app layer.
   role         String   @default("user")
-  // "credentials" | "google" — how the account first signed up.
-  provider     String   @default("credentials")
+  // "google" — how the account signed up. Google is the only sign-in method;
+  // "test" appears only when the test-login provider is enabled locally.
+  provider     String   @default("google")
   image        String?
 
   // Independent verification flags — a user may verify email, phone, both, or
@@ -25,7 +24,7 @@ model User {
   emailVerified Boolean @default(false)
   phoneVerified Boolean @default(false)
 
-  // Bumped on password reset / "log out everywhere". Sessions carry this value
+  // Bumped on "log out everywhere". Sessions carry this value
   // in their JWT; getSessionUser rejects any token whose value is stale, which
   // invalidates every previously-issued session at once.
   tokenVersion Int      @default(0)
@@ -43,7 +42,6 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   jobs         Job[]
-  resetTokens  PasswordResetToken[]
   otpCodes     OtpCode[]
 }
 
@@ -65,20 +63,6 @@ model OtpCode {
 
   @@index([userId])
   @@index([target, type])
-}
-
-model PasswordResetToken {
-  id        String    @id @default(uuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  // We store ONLY the SHA-256 hash of the token; the raw token lives only in the
-  // emailed link. A DB leak therefore cannot be used to reset anyone's password.
-  tokenHash String    @unique
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime  @default(now())
-
-  @@index([userId])
 }
 
 model Job {
