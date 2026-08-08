@@ -49,7 +49,9 @@ export default function LandingNavbar() {
       <div className="landing-nav-inner">
         {/* Group 1: Logo */}
         <div className="landing-nav-group landing-nav-logo-group">
-          <Logo height={28} variant="light" href="/" />
+          {/* auto → var(--text): dark text on the light pill, light text on the
+              dark pill, so the wordmark stays visible when the theme flips. */}
+          <Logo height={28} variant="auto" href="/" />
         </div>
 
         {/* Group 2: Navigation items */}
