@@ -24,16 +24,15 @@ services:
     healthCheckPath: /api/health
     autoDeploy: true
 
-    # NEXT_PUBLIC_* values are inlined during the build, so the origin has to be
-    # passed as a build argument, not only as a runtime variable.
+    # NEXT_PUBLIC_APP_URL is inlined during the build, so it must be a build
+    # argument. It has to be the FULL origin including https:// — Render's
+    # `fromService property: host` returns only the bare hostname, which would
+    # break canonical/OG URLs. Set it by hand in the dashboard: your service is
+    # served at https://<service-name>.onrender.com (e.g.
+    # https://transtts.onrender.com), or your custom domain.
     dockerBuildArgs:
       NEXT_PUBLIC_APP_URL:
-        fromService:
-          type: web
-          name: transtts
-          property: host
-          # Resolves to https://<service>.onrender.com; replace with a custom
-          # domain once one is attached (and update AUTH_URL to match).
+        sync: false
 
     # TTS clips are read back from disk after they are generated, so this
     # directory has to outlive a deploy. Uploads are scratch and stay ephemeral.
@@ -56,18 +55,14 @@ services:
           name: transtts-db
           property: connectionString
 
-      # Public origin. Must match the deployed URL exactly or OAuth callbacks
-      # and canonical URLs break.
+      # Full origin, e.g. https://transtts.onrender.com. Set by hand — Render's
+      # fromService `host` is scheme-less, and these must match the deployed
+      # URL exactly or OAuth callbacks and canonical URLs break. Set
+      # NEXT_PUBLIC_APP_URL to the SAME value you gave the build argument above.
       - key: NEXT_PUBLIC_APP_URL
-        fromService:
-          type: web
-          name: transtts
-          property: host
+        sync: false
       - key: AUTH_URL
-        fromService:
-          type: web
-          name: transtts
-          property: host
+        sync: false
 
       # Session signing key — generated once by Render, never in the repo.
       - key: AUTH_SECRET
