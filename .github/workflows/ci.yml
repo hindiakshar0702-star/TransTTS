@@ -44,6 +44,13 @@ jobs:
       # signs in through the test-login provider. Both this and NODE_ENV are
       # checked before that provider is registered — never set it in production.
       AUTH_TEST_MODE: "1"
+      # Placeholder so a Whisper client is configured. The transcribe and
+      # social-transcribe intake paths only check that a key EXISTS before
+      # accepting the job; the suite never reaches a real Whisper call —
+      # transcription runs on silence and yt-dlp fails on a non-existent video
+      # before the key is ever used. Must not be the literal "your-groq-api-key
+      # -here" sentinel, which getWhisperClient() treats as unset.
+      GROQ_API_KEY: ci-placeholder-key-never-validated
       NEXT_TELEMETRY_DISABLED: "1"
 
     steps:
