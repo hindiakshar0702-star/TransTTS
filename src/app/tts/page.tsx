@@ -87,27 +87,6 @@ function TTSContent() {
     setIsPlaying(false); setCurrentTime(0); setAudioDuration(0);
   };
 
-  // Wait for a background synthesis job to finish. Bounded so a job that dies
-  // without updating its row can never leave the UI polling forever.
-  const pollTtsJob = async (jobId: string): Promise<string> => {
-    const MAX_ATTEMPTS = 60; // ~90s at 1.5s intervals
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      await new Promise((r) => setTimeout(r, 1500));
-
-      const res = await fetch(`/api/jobs/${jobId}`, { cache: "no-store" });
-      if (!res.ok) throw new Error("Lost track of the voice generation job.");
-      const job = await res.json();
-
-      if (job.status === "error") {
-        throw new Error(job.errorMsg || "Voice generation failed.");
-      }
-      if (job.status === "completed" && job.audioUrl) {
-        return job.audioUrl as string;
-      }
-    }
-    throw new Error("Voice generation is taking longer than expected. Please try again.");
-  };
-
   const handleGenerate = async () => {
     if (!text.trim()) return;
     setStatus("generating");
@@ -137,14 +116,9 @@ function TTSContent() {
 
       const data = await res.json();
 
-      // The server returns 202 + jobId and synthesises in the background; a
-      // repeat of an identical request comes back already completed, so only
-      // poll when there is something still running.
-      const finalUrl =
-        data.status === "completed" && data.audioUrl
-          ? data.audioUrl
-          : await pollTtsJob(data.jobId);
-
+      // The server synthesises in-request and returns the audio inline as a
+      // base64 data URL, which <audio> can play and the download link can use.
+      const finalUrl: string = data.audioUrl;
       setAudioUrl(finalUrl);
       setStatus("done");
 
@@ -183,8 +157,9 @@ function TTSContent() {
 
   const downloadAudio = () => {
     if (!audioUrl) return;
+    // audioUrl is a base64 data URL — the download attribute saves it directly.
     const a = document.createElement("a");
-    a.href = audioUrl + "?download=1";
+    a.href = audioUrl;
     a.download = `speech-${voice}-${Date.now()}.mp3`;
     a.click();
   };
@@ -266,6 +241,7 @@ function TTSContent() {
                 <input
                   type="range"
                   className="speed-slider"
+                  aria-label="Speaking speed"
                   min="0.5"
                   max="2.0"
                   step="0.1"
@@ -424,6 +400,9 @@ function TTSContent() {
             {/* Scrollable Voice Grid List */}
             <div
               className="voice-grid"
+              role="group"
+              aria-label="Voice list"
+              tabIndex={0}
               style={{
                 overflowY: "auto",
                 maxHeight: "520px",

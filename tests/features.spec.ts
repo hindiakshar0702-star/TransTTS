@@ -1,13 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { registerAndSignIn } from "./helpers/auth";
 
+// The app is public — the tool pages need no sign-in.
 test.describe("Core Features Functional Validation", () => {
-
-  test.beforeEach(async ({ page }) => {
-    // Feature pages are behind real Auth.js cookie-session auth: register a
-    // throwaway user and complete credentials sign-in on the page's cookie jar.
-    await registerAndSignIn(page.request, { emailPrefix: "pw-feat" });
-  });
 
   test("should interact with TTS Generator Board and show generating state", async ({ page }) => {
     await page.goto("/tts");

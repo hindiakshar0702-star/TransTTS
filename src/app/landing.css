@@ -1498,11 +1498,12 @@
 }
 .legal-body li { margin-bottom: 8px; }
 .legal-body strong { color: var(--color-landing-text); }
+/* Underlined so links in a paragraph are distinguishable without relying on
+   colour alone (WCAG link-in-text-block). */
 .legal-body a {
   color: var(--color-landing-accent-text);
-  text-decoration: none;
+  text-decoration: underline;
 }
-.legal-body a:hover { text-decoration: underline; }
 .legal-intro {
   font-size: 1.05rem;
   line-height: 1.65;

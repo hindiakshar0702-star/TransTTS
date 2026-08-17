@@ -1,19 +1,16 @@
 import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
-import { createHash } from "crypto";
+import { randomUUID } from "crypto";
 import fs from "fs/promises";
 import path from "path";
-import prisma from "@/lib/prisma";
-import { generateId } from "@/lib/utils";
-import { getGeneratedDir } from "@/lib/server-utils";
+import os from "os";
 
 /**
- * Speech synthesis core, shared by the /api/tts route.
+ * Speech synthesis core (Microsoft Edge neural voices — free, no API key).
  *
- * Synthesis takes seconds and used to run inside the POST handler, holding the
- * request open the whole time. It now runs in the background against a job row
- * the client polls, matching the transcription flow.
- *
- * Node-only (fs, network, database).
+ * Serverless-friendly: msedge-tts writes a file, so we write into the platform
+ * temp dir (/tmp, writable and ephemeral on Vercel), read the bytes back,
+ * return them, and delete the temp dir. Nothing is persisted — the audio comes
+ * back inline in the response.
  */
 
 export const runtime = "nodejs";
@@ -45,64 +42,15 @@ export const DEFAULT_VOICE_KEY = "hi-female";
 export const MAX_TTS_CHARS = 5000;
 
 /**
- * Identifies one synthesis request. Same text, voice and rate always produce
- * the same audio, so a match means the file can be reused.
+ * Synthesise `text` and return the MP3 bytes. `rate` is the speaking speed
+ * (0.5–2.0). Throws on failure.
  */
-export function ttsCacheKey(text: string, voice: string, rate: number): string {
-  return createHash("sha256").update(`${voice}|${rate}|${text}`).digest("hex");
-}
-
-/**
- * Find audio this user already generated for an identical request, and confirm
- * the file is still on disk — the cleanup sweep may have removed it.
- *
- * Deliberately scoped to one user: sharing files between accounts would mean
- * one person clearing their history deletes audio another person's job still
- * points at.
- */
-export async function findCachedAudio(
-  userId: string,
-  cacheKey: string
-): Promise<string | null> {
-  const previous = await prisma.job.findFirst({
-    where: { userId, cacheKey, type: "tts", status: "completed", audioUrl: { not: null } },
-    orderBy: { createdAt: "desc" },
-    select: { audioUrl: true },
-  });
-  if (!previous?.audioUrl) return null;
-
-  const fileId = previous.audioUrl.split("/").pop();
-  if (!fileId || !/^[a-zA-Z0-9-]+$/.test(fileId)) return null;
-
-  const generatedDir = getGeneratedDir();
-  const filePath = path.normalize(path.join(generatedDir, `${fileId}.mp3`));
-  if (!filePath.startsWith(generatedDir)) return null;
-
-  const stillThere = await fs.access(filePath).then(() => true).catch(() => false);
-  return stillThere ? previous.audioUrl : null;
-}
-
-/**
- * Synthesise `text` and record the result on `jobId`. Throwing is allowed —
- * the caller marks the job as errored.
- */
-export async function synthesizeForJob(
-  jobId: string,
+export async function synthesizeToBuffer(
   text: string,
   msVoice: string,
-  rate: number,
-  cacheKey: string
-): Promise<string> {
-  const generatedDir = getGeneratedDir();
-  const fileId = generateId();
-  const tempDir = path.normalize(path.join(generatedDir, fileId));
-
-  // Path traversal defense-in-depth.
-  if (!tempDir.startsWith(generatedDir)) {
-    throw new Error("Invalid generated directory path");
-  }
-
-  await prisma.job.update({ where: { id: jobId }, data: { progress: 40 } });
+  rate: number
+): Promise<Buffer> {
+  const tempDir = path.join(os.tmpdir(), `tts-${randomUUID()}`);
   await fs.mkdir(tempDir, { recursive: true });
 
   try {
@@ -110,26 +58,13 @@ export async function synthesizeForJob(
     await tts.setMetadata(msVoice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
     await tts.toFile(tempDir, text, { rate });
 
-    const generatedFile = path.normalize(path.join(tempDir, "audio.mp3"));
-    const finalPath = path.normalize(path.join(generatedDir, `${fileId}.mp3`));
-    if (!generatedFile.startsWith(tempDir) || !finalPath.startsWith(generatedDir)) {
-      throw new Error("Invalid file paths");
-    }
-
-    const produced = await fs.access(generatedFile).then(() => true).catch(() => false);
+    const filePath = path.join(tempDir, "audio.mp3");
+    const produced = await fs.access(filePath).then(() => true).catch(() => false);
     if (!produced) throw new Error("Audio file was not generated");
 
-    await fs.rename(generatedFile, finalPath);
-
-    const audioUrl = `/api/tts/audio/${fileId}`;
-    await prisma.job.update({
-      where: { id: jobId },
-      data: { status: "completed", progress: 100, audioUrl, cacheKey },
-    });
-    return audioUrl;
+    return await fs.readFile(filePath);
   } finally {
-    // Remove the temp directory whether or not synthesis succeeded, so an
-    // interrupted run does not leave one behind for the sweep to find.
+    // Best-effort cleanup — the temp dir is ephemeral anyway on serverless.
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
 }

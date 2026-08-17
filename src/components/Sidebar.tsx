@@ -1,9 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useToast } from "@/components/Toast";
-import { useSession, logout } from "@/lib/useSession";
-import { HomeIcon, RadioIcon, MicIcon, GlobeIcon, VolumeIcon, UserIcon, LogOutIcon, SettingsIcon, MenuIcon, XIcon } from "@/components/Icons";
+import { HomeIcon, RadioIcon, MicIcon, GlobeIcon, VolumeIcon, SettingsIcon, MenuIcon, XIcon } from "@/components/Icons";
 import Logo from "@/components/Logo";
 
 interface SidebarProps {
@@ -12,20 +10,7 @@ interface SidebarProps {
 
 export default function Sidebar({ active }: SidebarProps) {
   const router = useRouter();
-  const { showToast } = useToast();
   const [drawerOpen, setDrawerOpen] = useState(false);
-
-  const { user } = useSession();
-  const userName = user?.name || user?.email?.split("@")[0] || "User";
-  const userEmail = user?.email || "";
-  const userAvatar = user?.image || "";
-
-  const handleLogout = async () => {
-    await logout();
-    showToast("Signed out successfully.", "info");
-    router.push("/");
-    router.refresh();
-  };
 
   // Navigate and always close the mobile drawer.
   const go = (href: string) => {
@@ -132,10 +117,6 @@ export default function Sidebar({ active }: SidebarProps) {
         <button className="sidebar-home-btn" onClick={() => go("/")}>
           <HomeIcon size={16} color="currentColor" />
           <span>Back to Home</span>
-        </button>
-        <button className="sidebar-logout-btn" onClick={handleLogout}>
-          <LogOutIcon size={16} color="currentColor" />
-          <span>Sign Out</span>
         </button>
       </div>
     </aside>

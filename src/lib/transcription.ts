@@ -1,11 +1,9 @@
-import OpenAI from "openai";
-import fs from "fs";
-import prisma from "@/lib/prisma";
+import OpenAI, { toFile } from "openai";
 
 /**
- * Shared Whisper transcription core, used by both the direct-upload route
- * (/api/transcribe) and the social-video route (/api/social-transcribe).
- * Node-only (fs, network, env) — never import from client components.
+ * Whisper transcription core — synchronous and filesystem-free, so it runs on
+ * serverless platforms (Vercel) without a writable disk or a background job.
+ * The upload bytes go straight to the OpenAI SDK via `toFile()`.
  */
 
 export const runtime = "nodejs";
@@ -13,8 +11,7 @@ export const runtime = "nodejs";
 /**
  * Content-based file-type validation. The Content-Type header and the filename
  * extension are attacker-controlled, so we sniff the actual bytes against known
- * audio/video container signatures. Rejects anything that isn't a real media
- * container before it is written to disk or forwarded to the Whisper API.
+ * audio/video container signatures.
  */
 export function looksLikeMedia(buf: Buffer): boolean {
   if (buf.length < 12) return false;
@@ -53,14 +50,14 @@ export function getWhisperClient() {
     return {
       client: new OpenAI({ apiKey: groqKey, baseURL: "https://api.groq.com/openai/v1" }),
       model: "whisper-large-v3-turbo",
-      engine: "groq",
+      engine: "groq" as const,
     };
   }
   if (openaiKey && openaiKey !== "sk-your-api-key-here") {
     return {
       client: new OpenAI({ apiKey: openaiKey }),
       model: "whisper-1",
-      engine: "openai",
+      engine: "openai" as const,
     };
   }
   return null;
@@ -68,8 +65,15 @@ export function getWhisperClient() {
 
 /** Map internal errors to a safe, user-facing message. */
 export function safeTranscribeError(raw: string): string {
-  if (raw.includes("429") || raw.includes("quota") || raw.includes("billing")) {
+  const lower = raw.toLowerCase();
+  if (lower.includes("429") || lower.includes("quota") || lower.includes("billing")) {
     return "API quota exceeded. Get a FREE Groq key at console.groq.com";
+  }
+  if (lower.includes("401") || lower.includes("invalid api key")) {
+    return "Invalid API key. Check GROQ_API_KEY / OPENAI_API_KEY.";
+  }
+  if (lower.includes("timeout") || lower.includes("etimedout")) {
+    return "The transcription service timed out. Large files can take ~60s — please retry.";
   }
   return "Transcription failed. Please try again.";
 }
@@ -82,66 +86,60 @@ interface WhisperVerbose {
   segments?: WhisperSegment[];
 }
 
+export interface TranscriptSegment {
+  id: number;
+  start: number;
+  end: number;
+  text: string;
+}
+
 export interface TranscriptionResult {
   text: string;
   language: string;
   duration: number;
+  segments: TranscriptSegment[];
+  engine: string;
 }
 
 /**
- * Run Whisper on a media file already saved to disk and persist the result on
- * the job row. Language "auto" lets Whisper detect the spoken language (works
- * across English, Spanish, Chinese, Hindi, Tamil, Telugu, Bengali, Marathi and
- * the rest of Whisper's ~99 languages). Deletes the file when done.
- * Throwing is allowed — callers mark the job as errored.
+ * Transcribe raw media bytes with Whisper and return the result directly — no
+ * disk, no database, no background job. `language` "auto" lets Whisper detect
+ * the spoken language across its ~99 languages (English, Spanish, Chinese,
+ * Hindi, Tamil, Telugu, Bengali, Marathi, and the rest). Throws on failure.
  */
-export async function transcribeFileForJob(
-  jobId: string,
-  filePath: string,
+export async function transcribeBuffer(
+  buffer: Buffer,
+  filename: string,
   language: string
 ): Promise<TranscriptionResult> {
   const config = getWhisperClient();
   if (!config) throw new Error("No transcription API key configured");
 
-  try {
-    await prisma.job.update({ where: { id: jobId }, data: { progress: 40 } });
+  // `toFile` packs the buffer into the multipart shape Whisper expects while
+  // preserving the filename, whose extension helps codec detection.
+  const audioFile = await toFile(buffer, filename || "audio.mp3");
 
-    const transcription = (await config.client.audio.transcriptions.create({
-      file: fs.createReadStream(filePath),
-      model: config.model,
-      language: language !== "auto" ? language : undefined,
-      response_format: "verbose_json",
-      // Only pass timestamp_granularities for openai to avoid 400 Bad Request on Groq
-      ...(config.engine === "openai" ? { timestamp_granularities: ["segment"] } : {}),
-    } as unknown as Parameters<typeof config.client.audio.transcriptions.create>[0])) as unknown as WhisperVerbose;
+  const transcription = (await config.client.audio.transcriptions.create({
+    file: audioFile,
+    model: config.model,
+    language: language !== "auto" ? language : undefined,
+    response_format: "verbose_json",
+    // Only pass timestamp_granularities for openai to avoid a 400 on Groq.
+    ...(config.engine === "openai" ? { timestamp_granularities: ["segment"] } : {}),
+  } as unknown as Parameters<typeof config.client.audio.transcriptions.create>[0])) as unknown as WhisperVerbose;
 
-    const segments = (transcription.segments || []).map((seg, idx) => ({
-      id: idx,
-      start: seg.start,
-      end: seg.end,
-      text: seg.text.trim(),
-    }));
+  const segments = (transcription.segments || []).map((seg, idx) => ({
+    id: idx,
+    start: seg.start,
+    end: seg.end,
+    text: seg.text.trim(),
+  }));
 
-    const detectedLang = transcription.language || language;
-    await prisma.job.update({
-      where: { id: jobId },
-      data: {
-        status: "completed",
-        progress: 100,
-        language: detectedLang,
-        duration: transcription.duration || 0,
-        transcript: transcription.text,
-        segments: JSON.stringify(segments),
-        engine: config.engine,
-      },
-    });
-
-    return {
-      text: transcription.text,
-      language: detectedLang,
-      duration: transcription.duration || 0,
-    };
-  } finally {
-    await fs.promises.unlink(filePath).catch(() => {});
-  }
+  return {
+    text: transcription.text,
+    language: transcription.language || language,
+    duration: transcription.duration || 0,
+    segments,
+    engine: config.engine,
+  };
 }

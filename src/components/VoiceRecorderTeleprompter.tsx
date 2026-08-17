@@ -808,6 +808,7 @@ export default function VoiceRecorderTeleprompter({ onSave, onCancel }: VoiceRec
             </div>
             <input
               type="checkbox"
+              aria-label="AI noise removal"
               checked={aiNoiseActive}
               onChange={(e) => { setAiNoiseActive(e.target.checked); showToast(`AI Noise Removal ${e.target.checked ? "enabled" : "disabled"}`, "info"); }}
               style={{ width: "18px", height: "18px", accentColor: "var(--success)", cursor: "pointer" }}

@@ -48,9 +48,6 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   devIndicators: false,
-  // Emits a self-contained server bundle in .next/standalone, so the runtime
-  // Docker stage ships only the traced dependencies instead of node_modules.
-  output: "standalone",
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/components/Toast";
 import Sidebar from "@/components/Sidebar";
 import { MicIcon, GlobeIcon, VolumeIcon, FileTextIcon, BarChartIcon, InboxIcon, TrashIcon, CopyIcon, PlayIcon } from "@/components/Icons";
+import { getHistory, getStats, deleteFromHistory, clearHistory } from "@/lib/history";
 
 interface Job {
   id: string;
@@ -40,42 +41,48 @@ export default function DashboardPage() {
   const router = useRouter();
   const { showToast } = useToast();
 
-  const fetchJobs = useCallback(async () => {
-    try {
-      const typeParam = filter === "all" ? "" : `?type=${filter}`;
-      const res = await fetch(`/api/jobs${typeParam}`);
-      if (!res.ok) throw new Error("Failed to fetch jobs");
-      const text = await res.text();
-      const data = JSON.parse(text);
-      setJobs(data.jobs || []);
-      setStats(data.stats || { total: 0, transcriptions: 0, translations: 0, ttsGenerations: 0, totalMinutes: 0 });
-    } catch { /* ignore */ }
+  // History lives in the browser (no account, no server). Map each stored item
+  // onto the shape the rest of this page renders.
+  const loadJobs = useCallback(() => {
+    const items = getHistory()
+      .filter((h) => filter === "all" || h.type === filter)
+      .map<Job>((h) => ({
+        id: h.id,
+        type: h.type,
+        title: h.title,
+        status: h.status,
+        language: h.data.language,
+        duration: h.data.duration,
+        targetLang: h.data.targetLang,
+        voice: h.data.voice,
+        transcript: h.data.transcript,
+        translatedText: h.data.translatedText,
+        audioUrl: h.data.audioUrl,
+        createdAt: new Date(h.timestamp).toISOString(),
+      }));
+    setJobs(items);
+    setStats(getStats());
     setLoading(false);
   }, [filter]);
 
-  // Load user data on mount + refetch when the filter (and thus fetchJobs) changes
   useEffect(() => {
     if (typeof window !== "undefined") {
       setIsAuth(true);
-      fetchJobs();
+      loadJobs();
     }
-  }, [fetchJobs]);
+  }, [loadJobs]);
 
-  const handleDelete = async (id: string) => {
-    try {
-      await fetch(`/api/jobs/${id}`, { method: "DELETE" });
-      fetchJobs();
-      showToast("Job deleted", "info");
-    } catch { showToast("Delete failed", "error"); }
+  const handleDelete = (id: string) => {
+    deleteFromHistory(id);
+    loadJobs();
+    showToast("Removed from history", "info");
   };
 
-  const handleClearAll = async () => {
+  const handleClearAll = () => {
     if (!confirm("Clear all history? This cannot be undone.")) return;
-    try {
-      await fetch("/api/jobs", { method: "DELETE" });
-      fetchJobs();
-      showToast("History cleared", "success");
-    } catch { showToast("Clear failed", "error"); }
+    clearHistory();
+    loadJobs();
+    showToast("History cleared", "success");
   };
 
   const typeIcon = (type: string) =>
