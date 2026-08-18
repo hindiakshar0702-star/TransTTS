@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 /**
- * POST /api/translate — public, keyless translation via MyMemory. No auth, no
+ * POST /api/translate — public translation via a Groq LLM. No auth, no
  * database: the result is returned in the response and kept client-side.
  */
 export async function POST(req: NextRequest) {
@@ -26,8 +26,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Text too long. Maximum 10,000 characters." }, { status: 400 });
     }
 
-    const src = sourceLang === "auto" || !sourceLang ? "en" : String(sourceLang);
-    if (!isValidLangCode(src) || !isValidLangCode(String(targetLang))) {
+    // "auto" is passed through rather than coerced to "en": the translator asks
+    // the model to detect the source. Coercing it here silently told the model
+    // that Hindi (or any other) input was English.
+    const src = sourceLang === "auto" || !sourceLang ? "auto" : String(sourceLang);
+    if ((src !== "auto" && !isValidLangCode(src)) || !isValidLangCode(String(targetLang))) {
       return NextResponse.json({ error: "Invalid language code." }, { status: 400 });
     }
 
@@ -44,7 +47,7 @@ export async function POST(req: NextRequest) {
       translatedText: outcome.text,
       sourceLang: sourceLang || "auto",
       targetLang,
-      engine: "MyMemory (Free)",
+      engine: "Groq (Free)",
     });
   } catch (error: unknown) {
     console.error("Translation error:", error);

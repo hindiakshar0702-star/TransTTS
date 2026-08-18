@@ -26,22 +26,24 @@ browser (localStorage); nothing is stored server-side.
 - **Next.js 16** / **React 19** (App Router, `src/` layout)
 - Transcription: Whisper via **Groq** (free tier) or **OpenAI**
 - TTS: **msedge-tts** (Microsoft Edge neural voices — free, no key)
-- Translation: **MyMemory** (free, no key)
+- Translation: **Groq** LLM (`openai/gpt-oss-120b`, free tier — same key as
+  transcription)
 
 ## Setup
 
 1. `npm install`
-2. Copy `.env.example` to `.env.local` and set at least a Whisper key:
+2. Copy `.env.example` to `.env.local` and set a Groq key:
 
    ```bash
-   GROQ_API_KEY=          # free at console.groq.com — or OPENAI_API_KEY
+   GROQ_API_KEY=          # free at console.groq.com
    NEXT_PUBLIC_APP_URL=http://localhost:3000
    ```
 
 3. `npm run dev` → http://localhost:3000
 
-`.env.example` documents every variable. Only a Whisper key is required;
-TTS and translation need none.
+`.env.example` documents every variable. `GROQ_API_KEY` drives both
+transcription and translation; `OPENAI_API_KEY` is an alternative for
+transcription only. TTS needs no key.
 
 ## Scripts
 

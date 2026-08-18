@@ -1,7 +1,17 @@
+import OpenAI from "openai";
+import { LANGUAGES } from "@/lib/utils";
+
 /**
- * Text-translation utility (MyMemory free API). Node-only (network I/O). No
- * database — long text is split at sentence boundaries and each piece is sent
- * to MyMemory's free, keyless endpoint.
+ * Text translation via Groq's free-tier LLMs. Node-only (network I/O).
+ *
+ * This used to call MyMemory's keyless endpoint, but MyMemory does not machine
+ * translate — it returns the closest entry from a user-contributed translation
+ * memory. In practice that meant "Good morning" came back as "don't say good
+ * night to me" and "Thank you very much" came back empty. Picking a different
+ * match from its response did not fix it either; the data itself is unreliable.
+ *
+ * Groq needs no extra account: the same GROQ_API_KEY that powers transcription
+ * is used here, still on the free tier.
  */
 
 const LANG_RE = /^[a-z]{2}(-[A-Za-z]{2,4})?$/;
@@ -17,8 +27,52 @@ export interface TranslateOutcome {
   detail?: string;
 }
 
-/** MyMemory rejects very long queries, so requests are split before sending. */
+/** Long text is split before sending so no single request is unwieldy. */
 export const MAX_CHUNK_CHARS = 4500;
+
+/**
+ * Groq model used for translation. Overridable so a deprecated model id can be
+ * swapped through env without a redeploy of the code.
+ *
+ * gpt-oss-120b was picked by measuring the alternatives on this account:
+ * qwen3.6-27b leaks its `<think>` block into the reply, and gpt-oss-20b is
+ * faster but slightly looser on longer passages.
+ */
+const TRANSLATE_MODEL = process.env.GROQ_TRANSLATE_MODEL || "openai/gpt-oss-120b";
+
+/**
+ * Human-readable language name for the prompt — LLMs handle names, not ISO
+ * codes. `code` reaches this from the request body, so the lookup is guarded
+ * against inherited keys ("constructor", "__proto__") rather than indexing the
+ * map directly.
+ */
+function languageName(code: string): string {
+  if (!Object.prototype.hasOwnProperty.call(LANGUAGES, code)) return code;
+  return LANGUAGES[code]?.name ?? code;
+}
+
+function getGroqClient(): OpenAI | null {
+  const key = process.env.GROQ_API_KEY;
+  if (!key || key === "your-groq-api-key-here") return null;
+  return new OpenAI({ apiKey: key, baseURL: "https://api.groq.com/openai/v1" });
+}
+
+/**
+ * Strip the wrappers an LLM sometimes adds around a translation despite being
+ * told not to — a "Translation:" label, or quotes around the whole answer.
+ *
+ * The `<think>` case is for GROQ_TRANSLATE_MODEL overrides: the default model
+ * keeps its reasoning in a separate field, but several others on Groq emit it
+ * inline and would otherwise ship a monologue to the user.
+ */
+function cleanOutput(raw: string): string {
+  let out = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  out = out.replace(/^(translation|translated text|output)\s*:\s*/i, "").trim();
+  if (out.length > 1 && /^["'“”]/.test(out) && /["'“”]$/.test(out)) {
+    out = out.slice(1, -1).trim();
+  }
+  return out;
+}
 
 /**
  * Sentence terminators, including the ones this app actually needs: the
@@ -94,49 +148,84 @@ export function chunkForTranslation(text: string, maxChars = MAX_CHUNK_CHARS): s
 }
 
 /**
- * Translate `text` from `sourceLang` to `targetLang` in 4.5k chunks via
- * MyMemory. Returns ok=false with a safe detail message on upstream failure
- * instead of throwing, so callers can degrade gracefully (e.g. keep the
- * untranslated transcript).
+ * Translate `text` from `sourceLang` to `targetLang`, chunked at sentence
+ * boundaries. Returns ok=false with a safe detail message on failure instead of
+ * throwing, so callers can degrade gracefully (e.g. keep the original text).
+ *
+ * `sourceLang` may be "auto" — the model infers it rather than being told.
  */
 export async function translateText(
   text: string,
   sourceLang: string,
   targetLang: string
 ): Promise<TranslateOutcome> {
-  const src = sourceLang === "auto" || !sourceLang ? "en" : sourceLang;
-  if (!isValidLangCode(src) || !isValidLangCode(targetLang)) {
+  const isAuto = sourceLang === "auto" || !sourceLang;
+  const src = isAuto ? "auto" : sourceLang;
+  if ((!isAuto && !isValidLangCode(src)) || !isValidLangCode(targetLang)) {
     return { ok: false, text: "", detail: "invalid language code" };
   }
 
-  const langPair = encodeURIComponent(`${src}|${targetLang}`);
+  const client = getGroqClient();
+  if (!client) {
+    return { ok: false, text: "", detail: "translation is not configured on this server" };
+  }
+
+  const target = languageName(targetLang);
+  const from = isAuto ? "the source language (detect it)" : languageName(src);
+
+  const system =
+    `You are a translation engine. Translate the user's text from ${from} into ${target}. ` +
+    `Reply with the translation ONLY — no preamble, no notes, no quotes around it. ` +
+    `Preserve line breaks, numbers and proper nouns. If a segment is already in ${target}, return it unchanged.`;
+
   const chunks = chunkForTranslation(text);
-
   const translated: string[] = [];
-  for (const chunk of chunks) {
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=${langPair}`;
-    try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 20_000);
-      const res = await fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(t));
-      const data = await res.json();
 
-      // MyMemory returns responseStatus as a number OR a string.
-      if (Number(data.responseStatus) === 200 && data.responseData?.translatedText) {
-        translated.push(data.responseData.translatedText);
-      } else {
-        const detail =
-          typeof data.responseDetails === "string" && data.responseDetails
-            ? data.responseDetails
-            : "the translation service is temporarily unavailable";
-        return { ok: false, text: "", detail };
+  for (const chunk of chunks) {
+    try {
+      const completion = await client.chat.completions.create(
+        {
+          model: TRANSLATE_MODEL,
+          // Deterministic: translation should not vary run to run.
+          temperature: 0,
+          // Translation needs no deliberation. Measured on the default model:
+          // this drops ~800 reasoning tokens per call to ~25 with identical
+          // output, which matters on a free tier billed by tokens per minute.
+          reasoning_effort: "low",
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: chunk },
+          ],
+        },
+        { timeout: 45_000 }
+      );
+
+      const out = cleanOutput(completion.choices[0]?.message?.content ?? "");
+      if (!out) {
+        return { ok: false, text: "", detail: "the translation service returned an empty result" };
       }
-    } catch {
-      return { ok: false, text: "", detail: "the translation service timed out" };
+      translated.push(out);
+    } catch (err) {
+      console.error("[translate] Groq call failed:", err);
+      const raw = err instanceof Error ? err.message : "";
+      const lower = raw.toLowerCase();
+
+      let detail = "the translation service is temporarily unavailable";
+      if (lower.includes("429") || lower.includes("rate limit") || lower.includes("quota")) {
+        detail = "the translation service is rate limited — please try again shortly";
+      } else if (lower.includes("timeout") || lower.includes("aborted")) {
+        detail = "the translation service timed out";
+      } else if (lower.includes("401") || lower.includes("invalid api key")) {
+        detail = "the translation service rejected the API key";
+      } else if (
+        lower.includes("model") &&
+        (lower.includes("decommission") || lower.includes("does not exist") || lower.includes("not_found"))
+      ) {
+        detail = "the configured translation model is not available";
+      }
+      return { ok: false, text: "", detail };
     }
   }
 
-  const result = translated.join(" ");
-
-  return { ok: true, text: result };
+  return { ok: true, text: translated.join(" ") };
 }
