@@ -81,7 +81,23 @@ test.describe("RNNoise worklet", () => {
       const count = frames - from;
       const rmsIn = Math.sqrt(inSum / count);
       const rmsOut = Math.sqrt(outSum / count);
-      return { rmsIn, changeDb: 20 * Math.log10(rmsOut / rmsIn) };
+
+      // A stepped gain would show up as a discontinuity far larger than the
+      // signal's own sample-to-sample movement.
+      let maxJump = 0;
+      let zeros = 0;
+      for (let i = from + 1; i < frames; i++) {
+        const jump = Math.abs(output[i] - output[i - 1]);
+        if (jump > maxJump) maxJump = jump;
+        if (output[i] === 0) zeros++;
+      }
+
+      return {
+        rmsIn,
+        changeDb: 20 * Math.log10(rmsOut / rmsIn),
+        maxJump,
+        silenceRatio: zeros / count,
+      };
     }, SR);
 
     // Sanity: the fixture really did carry signal.
@@ -91,5 +107,10 @@ test.describe("RNNoise worklet", () => {
     // no-op. Anything past a few dB of attenuation means the frames genuinely
     // reached the model.
     expect(result.changeDb).toBeLessThan(-6);
+
+    // The residual-noise gate must fade, never mute or step: digital silence
+    // sounds broken, and a stepped gain clicks once per 10 ms frame.
+    expect(result.silenceRatio).toBeLessThan(0.01);
+    expect(result.maxJump).toBeLessThan(0.2);
   });
 });
