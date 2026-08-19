@@ -87,6 +87,13 @@ export default function VoiceRecorderTeleprompter({ onSave, onCancel }: VoiceRec
   const [fontSize, setFontSize] = useState(16);
   const [scrollSpeed, setScrollSpeed] = useState<"slow" | "normal" | "fast">("normal");
   const [aiNoiseActive, setAiNoiseActive] = useState(true);
+  /**
+   * What the audio graph is actually doing, as opposed to what was asked for.
+   * The banner used to claim RNNoise unconditionally, including when the
+   * worklet had failed to load and the biquad fallback was carrying the
+   * recording.
+   */
+  const [denoiseMode, setDenoiseMode] = useState<"rnnoise" | "filter" | "off">("off");
   // Ref so the auto-restart handler always reads the current language.
   const recognitionLangRef = useRef("en-US");
 
@@ -251,13 +258,32 @@ export default function VoiceRecorderTeleprompter({ onSave, onCancel }: VoiceRec
 
       const destinationNode = audioCtx.createMediaStreamDestination();
 
-      // Real-time AI noise removal with robust AudioWorklet fallback
+      // Real-time noise removal, with a fallback the UI is told about.
       setIsLoadingModel(true);
       let workletSuccess = false;
-      try {
-        if (audioCtx.audioWorklet) {
+
+      if (aiNoiseActive) {
+        try {
+          if (!audioCtx.audioWorklet) throw new Error("AudioWorklet is unavailable");
+
           await audioCtx.audioWorklet.addModule("/worklets/rnnoise-processor.js");
           const rnnoiseNode = new AudioWorkletNode(audioCtx, "rnnoise-processor");
+
+          // Constructing the node succeeds even when the processor threw while
+          // bringing the wasm up, so wait for it to report in rather than
+          // assuming a node means a working denoiser.
+          const ready = await new Promise<boolean>((resolve) => {
+            const timer = setTimeout(() => resolve(false), 5000);
+            rnnoiseNode.port.onmessage = (event) => {
+              const data = event.data as { type?: string; message?: string } | null;
+              if (!data || typeof data.type !== "string") return;
+              clearTimeout(timer);
+              if (data.type === "error") console.warn("RNNoise failed to start:", data.message);
+              resolve(data.type === "ready");
+            };
+          });
+          if (!ready) throw new Error("RNNoise did not report ready");
+
           rnnoiseNodeRef.current = rnnoiseNode;
 
           // Connect: source -> rnnoise worklet -> analyser -> destination
@@ -265,14 +291,14 @@ export default function VoiceRecorderTeleprompter({ onSave, onCancel }: VoiceRec
           rnnoiseNode.connect(analyser);
           analyser.connect(destinationNode);
           workletSuccess = true;
+        } catch (workletErr) {
+          console.warn("RNNoise unavailable, falling back to biquad filters:", workletErr);
         }
-      } catch (workletErr) {
-        console.warn("RNNoise initialization notice (using Biquad filter fallback):", workletErr);
-        workletSuccess = false;
       }
 
-      if (!workletSuccess) {
-        // Fallback: High-pass (80Hz) + Low-pass (8000Hz) filters for clean audio
+      if (!workletSuccess && aiNoiseActive) {
+        // Fallback: high-pass (80Hz) + low-pass (8000Hz). This is not noise
+        // removal — it only trims rumble and hiss outside the speech band.
         const hpFilter = audioCtx.createBiquadFilter();
         hpFilter.type = "highpass";
         hpFilter.frequency.value = 80;
@@ -284,7 +310,12 @@ export default function VoiceRecorderTeleprompter({ onSave, onCancel }: VoiceRec
         hpFilter.connect(lpFilter);
         lpFilter.connect(analyser);
         analyser.connect(destinationNode);
+      } else if (!workletSuccess) {
+        sourceNode.connect(analyser);
+        analyser.connect(destinationNode);
       }
+
+      setDenoiseMode(workletSuccess ? "rnnoise" : aiNoiseActive ? "filter" : "off");
       setIsLoadingModel(false);
 
       // Initialize MediaRecorder on destination node
@@ -797,21 +828,32 @@ export default function VoiceRecorderTeleprompter({ onSave, onCancel }: VoiceRec
             </div>
           </div>
 
-          {/* AI Noise Removal Active Banner */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", padding: "12px 14px", borderRadius: "var(--radius-sm)", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", marginBottom: "16px" }}>
+          {/* Noise removal banner — reports what the graph is really running */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", padding: "12px 14px", borderRadius: "var(--radius-sm)", background: denoiseMode === "filter" ? "rgba(245,158,11,0.08)" : "rgba(16,185,129,0.08)", border: `1px solid ${denoiseMode === "filter" ? "rgba(245,158,11,0.25)" : "rgba(16,185,129,0.2)"}`, marginBottom: "16px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <ShieldIcon size={18} color="var(--success)" />
+              <ShieldIcon size={18} color={denoiseMode === "filter" ? "var(--warning)" : "var(--success)"} />
               <div style={{ textAlign: "left" }}>
-                <div style={{ fontWeight: 800, fontSize: "0.82rem", color: "var(--success)" }}>AI Noise Removal Active</div>
-                <div style={{ fontSize: "0.72rem", color: "var(--text-dim)" }}>RNNoise AI removes background noise in real-time</div>
+                <div style={{ fontWeight: 800, fontSize: "0.82rem", color: denoiseMode === "filter" ? "var(--warning)" : "var(--success)" }}>
+                  {denoiseMode === "rnnoise" ? "AI Noise Removal Active" : denoiseMode === "filter" ? "Basic Filtering Only" : "AI Noise Removal"}
+                </div>
+                <div style={{ fontSize: "0.72rem", color: "var(--text-dim)" }}>
+                  {denoiseMode === "rnnoise"
+                    ? "RNNoise AI removes background noise in real-time"
+                    : denoiseMode === "filter"
+                      ? "RNNoise could not start — using a band-pass filter instead"
+                      : "RNNoise AI removes background noise while you record"}
+                </div>
               </div>
             </div>
             <input
               type="checkbox"
               aria-label="AI noise removal"
               checked={aiNoiseActive}
+              // The graph is built once at record time, so the choice can only
+              // be made before recording starts.
+              disabled={isRecording}
               onChange={(e) => { setAiNoiseActive(e.target.checked); showToast(`AI Noise Removal ${e.target.checked ? "enabled" : "disabled"}`, "info"); }}
-              style={{ width: "18px", height: "18px", accentColor: "var(--success)", cursor: "pointer" }}
+              style={{ width: "18px", height: "18px", accentColor: "var(--success)", cursor: isRecording ? "not-allowed" : "pointer", opacity: isRecording ? 0.5 : 1 }}
             />
           </div>
 
