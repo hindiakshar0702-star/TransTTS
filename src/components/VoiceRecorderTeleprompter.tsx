@@ -608,11 +608,24 @@ export default function VoiceRecorderTeleprompter({ onSave, onCancel }: VoiceRec
     }
   };
 
+  /**
+   * MediaRecorder hands back whatever container the browser chose — WebM/Opus
+   * in every Chromium build. Naming that file ".wav" makes every downstream
+   * tool guess wrong about its contents, so the extension is derived from the
+   * blob rather than assumed.
+   */
+  const recordingExtension = () => {
+    const fileType = audioBlob?.type.split(";")[0] || "audio/webm";
+    if (fileType.includes("webm")) return ".webm";
+    if (fileType.includes("ogg")) return ".ogg";
+    if (fileType.includes("mp4") || fileType.includes("mpeg")) return ".m4a";
+    return ".wav";
+  };
+
   const handleUseRecording = () => {
     if (!audioBlob) return;
     const fileType = audioBlob.type.split(";")[0] || "audio/webm";
-    const extension = fileType.includes("webm") ? ".webm" : ".wav";
-    const file = new File([audioBlob], `recorded-voice-${Date.now()}${extension}`, {
+    const file = new File([audioBlob], `recorded-voice-${Date.now()}${recordingExtension()}`, {
       type: fileType,
     });
     onSave(file);
@@ -623,7 +636,7 @@ export default function VoiceRecorderTeleprompter({ onSave, onCancel }: VoiceRec
     if (!audioUrl) return;
     const a = document.createElement("a");
     a.href = audioUrl;
-    a.download = `recorded-speech-${Date.now()}.wav`;
+    a.download = `recorded-speech-${Date.now()}${recordingExtension()}`;
     a.click();
     showToast("Audio download started", "success");
   };
