@@ -99,3 +99,31 @@ export const WHISPER_MAX_BYTES = 25 * 1024 * 1024;
  * quota. Ten parts is roughly 40 minutes of MP3 or 20 of decoded audio.
  */
 export const MAX_UPLOAD_PARTS = 10;
+
+/**
+ * Resolve a spoken-language *name* back to its ISO code.
+ *
+ * Whisper's verbose response reports the language it detected as a name
+ * ("Indonesian"), while its request parameter expects a code ("id"). Feeding
+ * the name straight back is rejected, so a transcript split across several
+ * requests has to translate between the two to stay in one language.
+ *
+ * Returns null for anything outside the app's language list — Whisper knows
+ * far more languages than this map does, and the caller falls back to
+ * auto-detection rather than guessing.
+ */
+export function languageCodeFromName(name: string): string | null {
+  const wanted = name.trim().toLowerCase();
+  if (!wanted) return null;
+  for (const [code, entry] of Object.entries(LANGUAGES)) {
+    if (code !== "auto" && entry.name.toLowerCase() === wanted) return code;
+  }
+  return null;
+}
+
+/**
+ * Longest transcript tail passed to Whisper as context for the next part.
+ * Its prompt field tops out around 224 tokens; a few hundred characters is
+ * comfortably inside that and is enough to carry the language and style.
+ */
+export const TRANSCRIPT_CONTEXT_CHARS = 500;

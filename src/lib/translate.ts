@@ -176,7 +176,17 @@ export async function translateText(
   const system =
     `You are a translation engine. Translate the user's text from ${from} into ${target}. ` +
     `Reply with the translation ONLY — no preamble, no notes, no quotes around it. ` +
-    `Preserve line breaks, numbers and proper nouns. If a segment is already in ${target}, return it unchanged.`;
+    `Preserve line breaks, numbers and proper nouns. ` +
+    // Most input here is a Whisper transcript rather than written prose, so it
+    // arrives without punctuation and with false starts and repeated words.
+    // Left unsaid, the model tidies it into an essay and drops content.
+    `The text may be a speech transcript: expect missing punctuation, false starts and repetition. ` +
+    `Never omit, summarise or condense — every clause of the input must appear in the output, ` +
+    `fillers and repeated words included, even where that reads worse than a tidied version would. ` +
+    // Romanised Hindi came back untouched under the old wording, because it
+    // read as "already Hindi".
+    `Text in ${target}'s language but written in another script still needs translating — put it into ${target}'s own script. ` +
+    `Return a passage unchanged only when it is already in ${target} and in ${target}'s script.`;
 
   const chunks = chunkForTranslation(text);
   const translated: string[] = [];

@@ -110,7 +110,8 @@ export interface TranscriptionResult {
 export async function transcribeBuffer(
   buffer: Buffer,
   filename: string,
-  language: string
+  language: string,
+  context?: string
 ): Promise<TranscriptionResult> {
   const config = getWhisperClient();
   if (!config) throw new Error("No transcription API key configured");
@@ -123,6 +124,10 @@ export async function transcribeBuffer(
     file: audioFile,
     model: config.model,
     language: language !== "auto" ? language : undefined,
+    // The tail of the preceding part, when this is a continuation. Whisper
+    // reads it as what was just said, which keeps spelling, punctuation and —
+    // most importantly — the language consistent across a boundary.
+    ...(context ? { prompt: context } : {}),
     response_format: "verbose_json",
     // Only pass timestamp_granularities for openai to avoid a 400 on Groq.
     ...(config.engine === "openai" ? { timestamp_granularities: ["segment"] } : {}),

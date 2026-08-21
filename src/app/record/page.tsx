@@ -7,7 +7,7 @@ import ExportModal from "@/components/ExportModal";
 import ProgressTracker from "@/components/ProgressTracker";
 import { usePersistedState, clearPersistedState } from "@/hooks/usePersistedState";
 import { addToHistory } from "@/lib/history";
-import { LANGUAGES, formatDuration, formatFileSize, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB, MAX_UPLOAD_PARTS } from "@/lib/utils";
+import { LANGUAGES, formatDuration, formatFileSize, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB, MAX_UPLOAD_PARTS, TRANSCRIPT_CONTEXT_CHARS, languageCodeFromName } from "@/lib/utils";
 import { prepareUpload, partFileName } from "@/lib/audioSplit";
 import { RadioIcon, VolumeIcon, GlobeIcon, SparklesIcon, FileTextIcon, SaveIcon, XIcon, ClockIcon, DownloadIcon, RefreshIcon, CopyIcon } from "@/components/Icons";
 import type { TranscriptSegment } from "@/types";
@@ -68,6 +68,7 @@ export default function RecordPage() {
       const allSegments: TranscriptSegment[] = [];
       let offsetSeconds = 0;
       let detected = "";
+      let pinnedLanguage = language;
 
       for (let i = 0; i < total; i++) {
         const part = prepared.parts[i];
@@ -81,7 +82,16 @@ export default function RecordPage() {
 
         const formData = new FormData();
         formData.append("file", part.blob, partFileName(file.name, i, total, part.blob.type));
-        formData.append("language", language);
+        // Parts after the first inherit the language detected in the first.
+        // Left on "auto" they are each detected independently, and a part that
+        // guesses wrong transcribes the speech phonetically into that other
+        // language — the transcript changes language mid-sentence.
+        formData.append("language", pinnedLanguage);
+        // The tail of what has been transcribed so far, so Whisper continues
+        // rather than restarting cold at every boundary.
+        if (texts.length > 0) {
+          formData.append("context", texts.join(" ").slice(-TRANSCRIPT_CONTEXT_CHARS));
+        }
 
         const res = await fetch("/api/transcribe", { method: "POST", body: formData });
 
@@ -105,7 +115,14 @@ export default function RecordPage() {
 
         const data = await res.json();
         if (data.text) texts.push(String(data.text).trim());
-        if (!detected && data.language) detected = data.language;
+        if (!detected && data.language) {
+          detected = data.language;
+          // Whisper reports a name but accepts a code, and only knows some of
+          // them here; an unmappable language stays on auto-detection.
+          if (pinnedLanguage === "auto") {
+            pinnedLanguage = languageCodeFromName(detected) || "auto";
+          }
+        }
 
         // Part timestamps start at zero; shift them to where the part sits.
         for (const segment of (data.segments || []) as TranscriptSegment[]) {

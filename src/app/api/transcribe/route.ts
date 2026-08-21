@@ -6,7 +6,7 @@ import {
   safeTranscribeError,
   transcribeBuffer,
 } from "@/lib/transcription";
-import { MAX_UPLOAD_BYTES, WHISPER_MAX_BYTES } from "@/lib/utils";
+import { MAX_UPLOAD_BYTES, WHISPER_MAX_BYTES, TRANSCRIPT_CONTEXT_CHARS } from "@/lib/utils";
 
 export const runtime = "nodejs";
 // Transcription can take a while; ask the platform for the longest it allows.
@@ -45,6 +45,13 @@ export async function POST(req: NextRequest) {
     const file = formData.get("file") as File | null;
     const language = (formData.get("language") as string) || "auto";
 
+    // Optional tail of the previous part, for files split across requests.
+    // Truncated rather than rejected: it is a hint, and Whisper ignores a
+    // prompt past roughly 224 tokens anyway.
+    const rawContext = formData.get("context");
+    const context =
+      typeof rawContext === "string" ? rawContext.slice(-TRANSCRIPT_CONTEXT_CHARS).trim() : "";
+
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
@@ -64,7 +71,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await transcribeBuffer(buffer, file.name, language);
+    const result = await transcribeBuffer(buffer, file.name, language, context || undefined);
     return NextResponse.json(result);
   } catch (error: unknown) {
     console.error("Transcription error:", error);
