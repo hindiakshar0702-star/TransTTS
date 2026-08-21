@@ -1,7 +1,7 @@
 "use client";
 
 import BentoCard from "./BentoCard";
-import { MAX_UPLOAD_MB } from "@/lib/utils";
+import { MAX_UPLOAD_MB, MAX_UPLOAD_PARTS } from "@/lib/utils";
 import {
   MicIcon, GlobeIcon, VolumeIcon, RadioIcon, SubtitlesIcon,
   SparklesIcon, CheckCircleIcon, ArrowRightIcon, HeadphonesIcon
@@ -114,7 +114,7 @@ export default function BentoGrid() {
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
                 <span className="landing-badge landing-badge-success">✓ 99.8% Whisper Success</span>
-                <span className="landing-badge landing-badge-info">✓ Up to {MAX_UPLOAD_MB}MB Files</span>
+                <span className="landing-badge landing-badge-info">✓ Up to {MAX_UPLOAD_MB * MAX_UPLOAD_PARTS}MB Files</span>
               </div>
             </div>
           </BentoCard>
