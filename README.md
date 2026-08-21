@@ -70,9 +70,13 @@ is needed.
 
 ## Notes
 
-- Uploads are capped at 4MB and TTS at 5000 characters. The upload cap is not
-  Whisper's (25MB) but the host's: Vercel rejects a serverless request body
-  over ~4.5MB at the edge, before any code runs. A self-hosted deployment can
-  raise it with `NEXT_PUBLIC_MAX_UPLOAD_MB`, up to 25.
+- A single request may carry 4MB — not Whisper's 25MB limit but the host's:
+  Vercel rejects a serverless request body over ~4.5MB at the edge, before any
+  code runs. Bigger files are split in the browser and sent as several
+  uploads, up to 10, so about 40MB of MP3 in practice. MP3 is cut on frame
+  boundaries (lossless, no decode); anything else is decoded to 16kHz mono WAV
+  and cut by time. `NEXT_PUBLIC_MAX_UPLOAD_MB` raises the per-request size on
+  hosts without the edge limit.
+- TTS is capped at 5000 characters.
 - Rate limiting is in-memory and per-instance — fine for a single serverless
   deployment, best-effort under scale.

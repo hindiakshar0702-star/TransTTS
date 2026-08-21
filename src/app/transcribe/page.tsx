@@ -7,7 +7,8 @@ import ExportModal from "@/components/ExportModal";
 import ProgressTracker from "@/components/ProgressTracker";
 import { usePersistedState, clearPersistedState } from "@/hooks/usePersistedState";
 import { addToHistory } from "@/lib/history";
-import { LANGUAGES, formatDuration, formatFileSize, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from "@/lib/utils";
+import { LANGUAGES, formatDuration, formatFileSize, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB, MAX_UPLOAD_PARTS } from "@/lib/utils";
+import { prepareUpload, partFileName } from "@/lib/audioSplit";
 import {
   MicIcon, VolumeIcon, GlobeIcon, SparklesIcon,
   FileTextIcon, SaveIcon, XIcon, ClockIcon, DownloadIcon,
@@ -48,9 +49,12 @@ export default function TranscribePage() {
   };
 
   const handleFile = (f: File) => {
-    if (f.size > MAX_UPLOAD_BYTES) {
+    // Bigger than one request is fine — it gets split before upload. Bigger
+    // than every request put together is not.
+    const ceiling = MAX_UPLOAD_BYTES * MAX_UPLOAD_PARTS;
+    if (f.size > ceiling) {
       setError(
-        `File too large (${(f.size / 1024 / 1024).toFixed(1)} MB). Maximum is ${MAX_UPLOAD_MB} MB.`
+        `File too large (${(f.size / 1024 / 1024).toFixed(1)} MB). Maximum is ${MAX_UPLOAD_MB * MAX_UPLOAD_PARTS} MB.`
       );
       return;
     }
@@ -70,43 +74,92 @@ export default function TranscribePage() {
   const handleTranscribe = async () => {
     if (!file) return;
     setStatus("uploading");
-    setProgress(10);
+    setProgress(4);
     setError("");
 
-    // The server transcribes synchronously and returns the result in one
-    // response, so show indeterminate progress while we wait.
-    const tick = setInterval(() => setProgress((p) => Math.min(p + 4, 92)), 700);
+    let tick: ReturnType<typeof setInterval> | undefined;
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("language", language);
+      // Anything over the host's request limit is cut client-side and sent as
+      // several uploads, then stitched back into one transcript.
+      const prepared = await prepareUpload(file, MAX_UPLOAD_BYTES);
+      const total = prepared.parts.length;
 
-      const res = await fetch("/api/transcribe", { method: "POST", body: formData });
-
-      if (!res.ok) {
-        let errorMsg = "Transcription failed";
-        try {
-          const text = await res.text();
-          try {
-            const data = JSON.parse(text);
-            errorMsg = data.error || errorMsg;
-          } catch {
-            if (res.status === 413 || text.includes("Request Entity Too Large")) {
-              errorMsg = `The server rejected this upload as too large. Maximum is ${MAX_UPLOAD_MB} MB.`;
-            } else {
-              errorMsg = `Server error: ${res.status} ${res.statusText}`;
-            }
-          }
-        } catch {}
-        throw new Error(errorMsg);
+      if (total > MAX_UPLOAD_PARTS) {
+        throw new Error(
+          `This file would need ${total} uploads of ${MAX_UPLOAD_MB} MB. The limit is ${MAX_UPLOAD_PARTS} — please trim it first.`
+        );
+      }
+      if (total > 1) {
+        showToast(`Large file — sending in ${total} parts`, "info");
       }
 
-      const data = await res.json();
+      const texts: string[] = [];
+      const allSegments: TranscriptSegment[] = [];
+      let offsetSeconds = 0;
+      let detected = "";
+
+      for (let i = 0; i < total; i++) {
+        const part = prepared.parts[i];
+        const partFloor = 4 + (i / total) * 92;
+        const partCeiling = 4 + ((i + 1) / total) * 92;
+        setProgress(Math.round(partFloor));
+
+        // The server transcribes synchronously, so creep towards this part's
+        // share of the bar while waiting on it.
+        clearInterval(tick);
+        tick = setInterval(
+          () => setProgress((p) => Math.min(p + 2, Math.round(partCeiling) - 2)),
+          700
+        );
+
+        const formData = new FormData();
+        formData.append("file", part.blob, partFileName(file.name, i, total, part.blob.type));
+        formData.append("language", language);
+
+        const res = await fetch("/api/transcribe", { method: "POST", body: formData });
+
+        if (!res.ok) {
+          let errorMsg = total > 1 ? `Transcription failed on part ${i + 1} of ${total}` : "Transcription failed";
+          try {
+            const text = await res.text();
+            try {
+              const data = JSON.parse(text);
+              errorMsg = data.error || errorMsg;
+            } catch {
+              if (res.status === 413 || text.includes("Request Entity Too Large")) {
+                errorMsg = `The server rejected this upload as too large. Maximum is ${MAX_UPLOAD_MB} MB.`;
+              } else {
+                errorMsg = `Server error: ${res.status} ${res.statusText}`;
+              }
+            }
+          } catch {}
+          throw new Error(errorMsg);
+        }
+
+        const data = await res.json();
+        if (data.text) texts.push(String(data.text).trim());
+        if (!detected && data.language) detected = data.language;
+
+        // Each part is transcribed in isolation, so its timestamps start at
+        // zero and have to be pushed to where the part actually sits.
+        for (const segment of (data.segments || []) as TranscriptSegment[]) {
+          allSegments.push({
+            id: allSegments.length,
+            start: segment.start + offsetSeconds,
+            end: segment.end + offsetSeconds,
+            text: segment.text,
+          });
+        }
+
+        offsetSeconds += Number(data.duration) || part.seconds;
+      }
+
+      clearInterval(tick);
       setProgress(100);
-      setTranscript(data.text || "");
-      setSegments(data.segments || []);
-      setDetectedLang(data.language || "");
-      setDuration(data.duration || 0);
+      setTranscript(texts.join(" "));
+      setSegments(allSegments);
+      setDetectedLang(detected);
+      setDuration(offsetSeconds);
       setStatus("done");
 
       addToHistory({
@@ -116,10 +169,11 @@ export default function TranscribePage() {
         data: {
           fileName: file?.name,
           fileSize: file?.size,
-          language: data.language,
-          duration: data.duration,
-          transcript: data.text,
-          segmentCount: (data.segments || []).length,
+          language: detected,
+          duration: offsetSeconds,
+          transcript: texts.join(" "),
+          segmentCount: allSegments.length,
+          uploadParts: total,
         },
       });
       showToast("Transcription complete!", "success");
@@ -205,7 +259,7 @@ export default function TranscribePage() {
                   Drag &amp; drop your audio or video file
                 </div>
                 <div style={{ fontSize: "0.82rem", color: "var(--text-dim)", fontWeight: 500 }}>
-                  MP3, WAV, MP4, MKV, FLAC, OGG, WebM • Max {MAX_UPLOAD_MB} MB
+                  MP3, WAV, MP4, MKV, FLAC, OGG, WebM • Max {MAX_UPLOAD_MB * MAX_UPLOAD_PARTS} MB
                 </div>
                 
                 <input

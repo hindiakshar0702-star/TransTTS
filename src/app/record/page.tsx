@@ -7,8 +7,8 @@ import ExportModal from "@/components/ExportModal";
 import ProgressTracker from "@/components/ProgressTracker";
 import { usePersistedState, clearPersistedState } from "@/hooks/usePersistedState";
 import { addToHistory } from "@/lib/history";
-import { MAX_UPLOAD_MB } from "@/lib/utils";
-import { LANGUAGES, formatDuration, formatFileSize } from "@/lib/utils";
+import { LANGUAGES, formatDuration, formatFileSize, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB, MAX_UPLOAD_PARTS } from "@/lib/utils";
+import { prepareUpload, partFileName } from "@/lib/audioSplit";
 import { RadioIcon, VolumeIcon, GlobeIcon, SparklesIcon, FileTextIcon, SaveIcon, XIcon, ClockIcon, DownloadIcon, RefreshIcon, CopyIcon } from "@/components/Icons";
 import type { TranscriptSegment } from "@/types";
 import VoiceRecorderTeleprompter from "@/components/VoiceRecorderTeleprompter";
@@ -52,41 +52,80 @@ export default function RecordPage() {
 
     let interval: ReturnType<typeof setInterval> | undefined;
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("language", language);
+      // A recording longer than a few minutes outgrows one request, so it is
+      // cut client-side and the transcripts are stitched back together.
+      const prepared = await prepareUpload(file, MAX_UPLOAD_BYTES);
+      const total = prepared.parts.length;
 
-      setProgress(30);
-      interval = setInterval(() => {
-        setProgress((p) => Math.min(p + 5, 90));
-      }, 800);
+      if (total > MAX_UPLOAD_PARTS) {
+        throw new Error(
+          `This recording would need ${total} uploads of ${MAX_UPLOAD_MB} MB. The limit is ${MAX_UPLOAD_PARTS} — please record in shorter takes.`
+        );
+      }
+      if (total > 1) showToast(`Long recording — sending in ${total} parts`, "info");
 
-      const res = await fetch("/api/transcribe", { method: "POST", body: formData });
+      const texts: string[] = [];
+      const allSegments: TranscriptSegment[] = [];
+      let offsetSeconds = 0;
+      let detected = "";
 
-      if (!res.ok) {
-        let errorMsg = "Transcription failed";
-        try {
-          const text = await res.text();
+      for (let i = 0; i < total; i++) {
+        const part = prepared.parts[i];
+        const partCeiling = 10 + ((i + 1) / total) * 86;
+        setProgress(Math.round(10 + (i / total) * 86));
+
+        clearInterval(interval);
+        interval = setInterval(() => {
+          setProgress((p) => Math.min(p + 3, Math.round(partCeiling) - 2));
+        }, 800);
+
+        const formData = new FormData();
+        formData.append("file", part.blob, partFileName(file.name, i, total, part.blob.type));
+        formData.append("language", language);
+
+        const res = await fetch("/api/transcribe", { method: "POST", body: formData });
+
+        if (!res.ok) {
+          let errorMsg = total > 1 ? `Transcription failed on part ${i + 1} of ${total}` : "Transcription failed";
           try {
-            const data = JSON.parse(text);
-            errorMsg = data.error || errorMsg;
-          } catch {
-            if (res.status === 413 || text.includes("Request Entity Too Large")) {
-              errorMsg = `The server rejected this recording as too large. Maximum is ${MAX_UPLOAD_MB} MB.`;
-            } else {
-              errorMsg = `Server error: ${res.status} ${res.statusText}`;
+            const text = await res.text();
+            try {
+              const data = JSON.parse(text);
+              errorMsg = data.error || errorMsg;
+            } catch {
+              if (res.status === 413 || text.includes("Request Entity Too Large")) {
+                errorMsg = `The server rejected this recording as too large. Maximum is ${MAX_UPLOAD_MB} MB.`;
+              } else {
+                errorMsg = `Server error: ${res.status} ${res.statusText}`;
+              }
             }
-          }
-        } catch {}
-        throw new Error(errorMsg);
+          } catch {}
+          throw new Error(errorMsg);
+        }
+
+        const data = await res.json();
+        if (data.text) texts.push(String(data.text).trim());
+        if (!detected && data.language) detected = data.language;
+
+        // Part timestamps start at zero; shift them to where the part sits.
+        for (const segment of (data.segments || []) as TranscriptSegment[]) {
+          allSegments.push({
+            id: allSegments.length,
+            start: segment.start + offsetSeconds,
+            end: segment.end + offsetSeconds,
+            text: segment.text,
+          });
+        }
+
+        offsetSeconds += Number(data.duration) || part.seconds;
       }
 
-      const data = await res.json();
+      clearInterval(interval);
       setProgress(100);
-      setTranscript(data.text);
-      setSegments(data.segments || []);
-      setDetectedLang(data.language);
-      setDuration(data.duration);
+      setTranscript(texts.join(" "));
+      setSegments(allSegments);
+      setDetectedLang(detected);
+      setDuration(offsetSeconds);
       setStatus("done");
 
       addToHistory({
@@ -96,10 +135,11 @@ export default function RecordPage() {
         data: {
           fileName: file?.name,
           fileSize: file?.size,
-          language: data.language,
-          duration: data.duration,
-          transcript: data.text,
-          segmentCount: (data.segments || []).length,
+          language: detected,
+          duration: offsetSeconds,
+          transcript: texts.join(" "),
+          segmentCount: allSegments.length,
+          uploadParts: total,
         },
       });
       showToast("Transcription complete!", "success");

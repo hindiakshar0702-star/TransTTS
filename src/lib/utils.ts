@@ -90,3 +90,12 @@ export const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 
 /** Whisper will not accept more than this, whatever the host allows. */
 export const WHISPER_MAX_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Most pieces a single file may be split into before the client gives up.
+ *
+ * Each piece is its own round trip and its own Whisper call, so a two-hour
+ * recording would sit there for several minutes and burn a lot of free-tier
+ * quota. Ten parts is roughly 40 minutes of MP3 or 20 of decoded audio.
+ */
+export const MAX_UPLOAD_PARTS = 10;
