@@ -71,3 +71,22 @@ export const TTS_VOICES = [
   { id: "nova", name: "Nova", desc: "Friendly & natural" },
   { id: "shimmer", name: "Shimmer", desc: "Soft & clear" },
 ] as const;
+
+/**
+ * Largest file the deployment will accept for transcription, in megabytes.
+ *
+ * Whisper's own cap is 25 MB, but on Vercel nothing that big ever reaches the
+ * route: serverless functions reject a request body over ~4.5 MB at the
+ * platform edge and answer 413 before any code runs. Measured against this
+ * deployment — a 4 MB upload reached the route, a 5 MB upload came back 413 —
+ * so the honest default is 4 MB, which leaves headroom for multipart overhead.
+ *
+ * A self-hosted deployment behind its own proxy has no such limit and can
+ * raise this with NEXT_PUBLIC_MAX_UPLOAD_MB, up to Whisper's 25 MB.
+ */
+export const MAX_UPLOAD_MB = Number(process.env.NEXT_PUBLIC_MAX_UPLOAD_MB) || 4;
+
+export const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
+
+/** Whisper will not accept more than this, whatever the host allows. */
+export const WHISPER_MAX_BYTES = 25 * 1024 * 1024;

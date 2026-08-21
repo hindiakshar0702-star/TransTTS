@@ -7,7 +7,7 @@ import ExportModal from "@/components/ExportModal";
 import ProgressTracker from "@/components/ProgressTracker";
 import { usePersistedState, clearPersistedState } from "@/hooks/usePersistedState";
 import { addToHistory } from "@/lib/history";
-import { LANGUAGES, formatDuration, formatFileSize } from "@/lib/utils";
+import { LANGUAGES, formatDuration, formatFileSize, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from "@/lib/utils";
 import {
   MicIcon, VolumeIcon, GlobeIcon, SparklesIcon,
   FileTextIcon, SaveIcon, XIcon, ClockIcon, DownloadIcon,
@@ -48,8 +48,10 @@ export default function TranscribePage() {
   };
 
   const handleFile = (f: File) => {
-    if (f.size > 25 * 1024 * 1024) {
-      setError("File too large. Maximum 25MB for Whisper API.");
+    if (f.size > MAX_UPLOAD_BYTES) {
+      setError(
+        `File too large (${(f.size / 1024 / 1024).toFixed(1)} MB). Maximum is ${MAX_UPLOAD_MB} MB.`
+      );
       return;
     }
     setFile(f);
@@ -90,7 +92,7 @@ export default function TranscribePage() {
             errorMsg = data.error || errorMsg;
           } catch {
             if (res.status === 413 || text.includes("Request Entity Too Large")) {
-              errorMsg = "File too large. Maximum size is 25MB or determined by your server limits.";
+              errorMsg = `The server rejected this upload as too large. Maximum is ${MAX_UPLOAD_MB} MB.`;
             } else {
               errorMsg = `Server error: ${res.status} ${res.statusText}`;
             }
@@ -203,7 +205,7 @@ export default function TranscribePage() {
                   Drag &amp; drop your audio or video file
                 </div>
                 <div style={{ fontSize: "0.82rem", color: "var(--text-dim)", fontWeight: 500 }}>
-                  MP3, WAV, MP4, MKV, FLAC, OGG, WebM • Max 25 MB
+                  MP3, WAV, MP4, MKV, FLAC, OGG, WebM • Max {MAX_UPLOAD_MB} MB
                 </div>
                 
                 <input

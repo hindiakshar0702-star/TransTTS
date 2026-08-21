@@ -70,7 +70,9 @@ is needed.
 
 ## Notes
 
-- Transcription and TTS are capped at 25MB / 5000 characters respectively to
-  stay within serverless request limits and Whisper's cap.
+- Uploads are capped at 4MB and TTS at 5000 characters. The upload cap is not
+  Whisper's (25MB) but the host's: Vercel rejects a serverless request body
+  over ~4.5MB at the edge, before any code runs. A self-hosted deployment can
+  raise it with `NEXT_PUBLIC_MAX_UPLOAD_MB`, up to 25.
 - Rate limiting is in-memory and per-instance — fine for a single serverless
   deployment, best-effort under scale.

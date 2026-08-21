@@ -6,12 +6,19 @@ import {
   safeTranscribeError,
   transcribeBuffer,
 } from "@/lib/transcription";
+import { MAX_UPLOAD_BYTES, WHISPER_MAX_BYTES } from "@/lib/utils";
 
 export const runtime = "nodejs";
 // Transcription can take a while; ask the platform for the longest it allows.
 export const maxDuration = 60;
 
-const MAX_BYTES = 25 * 1024 * 1024; // Whisper hard cap
+/**
+ * Whatever the host lets through, never offer Whisper more than it accepts.
+ * On Vercel the platform answers 413 well below either number, which is why
+ * MAX_UPLOAD_BYTES defaults far under Whisper's cap — see lib/utils.
+ */
+const MAX_BYTES = Math.min(MAX_UPLOAD_BYTES, WHISPER_MAX_BYTES);
+const MAX_MB = Math.round(MAX_BYTES / 1024 / 1024);
 
 /**
  * POST /api/transcribe — public, synchronous transcription.
@@ -45,7 +52,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Empty file" }, { status: 400 });
     }
     if (file.size > MAX_BYTES) {
-      return NextResponse.json({ error: "File too large. Maximum 25MB." }, { status: 400 });
+      return NextResponse.json({ error: `File too large. Maximum ${MAX_MB}MB.` }, { status: 400 });
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());

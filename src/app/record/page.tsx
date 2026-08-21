@@ -7,6 +7,7 @@ import ExportModal from "@/components/ExportModal";
 import ProgressTracker from "@/components/ProgressTracker";
 import { usePersistedState, clearPersistedState } from "@/hooks/usePersistedState";
 import { addToHistory } from "@/lib/history";
+import { MAX_UPLOAD_MB } from "@/lib/utils";
 import { LANGUAGES, formatDuration, formatFileSize } from "@/lib/utils";
 import { RadioIcon, VolumeIcon, GlobeIcon, SparklesIcon, FileTextIcon, SaveIcon, XIcon, ClockIcon, DownloadIcon, RefreshIcon, CopyIcon } from "@/components/Icons";
 import type { TranscriptSegment } from "@/types";
@@ -71,7 +72,7 @@ export default function RecordPage() {
             errorMsg = data.error || errorMsg;
           } catch {
             if (res.status === 413 || text.includes("Request Entity Too Large")) {
-              errorMsg = "File too large. Maximum size is 25MB or determined by your server limits.";
+              errorMsg = `The server rejected this recording as too large. Maximum is ${MAX_UPLOAD_MB} MB.`;
             } else {
               errorMsg = `Server error: ${res.status} ${res.statusText}`;
             }
