@@ -6,8 +6,11 @@
  * longer than that. Rather than refuse them, the client cuts them into pieces
  * that each fit, transcribes the pieces, and stitches the results.
  *
- * Two strategies, because one of them is much better when it applies:
+ * Three strategies, tried in order of how good the result is:
  *
+ *  - Where the browser has an Opus encoder, the audio is re-encoded at speech
+ *    bitrate. This is the only strategy that makes the file *smaller* rather
+ *    than merely divisible, so it usually results in a single upload.
  *  - MP3 is a bare sequence of self-contained frames. Cutting on a frame
  *    boundary yields files that are still valid MP3, with no decode, no
  *    re-encode and no quality loss. This is the fast path.
@@ -22,6 +25,11 @@
  * rejects them at the magic-number check.
  */
 
+import { canEncodeOpus, encodeOggOpus, OPUS_BITRATE } from "@/lib/oggOpus";
+
+/** Opus is defined at 48 kHz, so the encoder is fed at that rate. */
+export const OPUS_SAMPLE_RATE = 48000;
+
 /** Whisper is trained at 16 kHz; sending more is bandwidth it discards. */
 export const TARGET_SAMPLE_RATE = 16000;
 
@@ -34,7 +42,7 @@ export interface AudioPart {
 export interface PreparedUpload {
   parts: AudioPart[];
   /** How the file was divided, for the progress copy. */
-  method: "single" | "mp3-split" | "decode-split";
+  method: "single" | "opus" | "mp3-split" | "decode-split";
 }
 
 /* ------------------------------------------------------------------ MP3 -- */
@@ -201,7 +209,7 @@ export const WAV_BYTES_PER_SECOND = TARGET_SAMPLE_RATE * 2;
  * Decode anything the browser understands, flatten it to 16 kHz mono, and cut
  * it into WAV pieces under `maxBytes`.
  */
-export async function splitByDecoding(file: File, maxBytes: number): Promise<AudioPart[]> {
+async function decodeToMono(file: File, sampleRate: number): Promise<Float32Array> {
   const AudioContextClass =
     window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
 
@@ -214,13 +222,16 @@ export async function splitByDecoding(file: File, maxBytes: number): Promise<Aud
   }
 
   // OfflineAudioContext does the mixdown and the resampling for us.
-  const frames = Math.ceil(decoded.duration * TARGET_SAMPLE_RATE);
-  const offline = new OfflineAudioContext(1, frames, TARGET_SAMPLE_RATE);
+  const offline = new OfflineAudioContext(1, Math.ceil(decoded.duration * sampleRate), sampleRate);
   const source = offline.createBufferSource();
   source.buffer = decoded;
   source.connect(offline.destination);
   source.start();
-  const pcm = (await offline.startRendering()).getChannelData(0);
+  return (await offline.startRendering()).getChannelData(0);
+}
+
+export async function splitByDecoding(file: File, maxBytes: number): Promise<AudioPart[]> {
+  const pcm = await decodeToMono(file, TARGET_SAMPLE_RATE);
 
   // Header included, so a part never lands a few bytes over the limit.
   const samplesPerPart = Math.floor((maxBytes - 44) / 2);
@@ -236,6 +247,41 @@ export async function splitByDecoding(file: File, maxBytes: number): Promise<Aud
   return parts;
 }
 
+/* ----------------------------------------------------------------- opus -- */
+
+/**
+ * Re-encode to Ogg Opus, in as few pieces as the limit allows.
+ *
+ * This is the strategy that makes a long file small rather than merely
+ * divisible: at 24 kbps a part holds around twenty minutes, so most recordings
+ * become a single upload and a single Whisper call.
+ *
+ * The number of parts is worked out from the bitrate before encoding, so each
+ * piece is encoded once. A tenth is held back for the Ogg page headers, which
+ * the bitrate does not account for.
+ */
+export async function splitByOpus(file: File, maxBytes: number): Promise<AudioPart[]> {
+  const pcm = await decodeToMono(file, OPUS_SAMPLE_RATE);
+  const bytesPerSecond = OPUS_BITRATE / 8;
+  const secondsPerPart = Math.max(1, Math.floor((maxBytes * 0.9) / bytesPerSecond));
+  const samplesPerPart = secondsPerPart * OPUS_SAMPLE_RATE;
+
+  const parts: AudioPart[] = [];
+  for (let offset = 0; offset < pcm.length; offset += samplesPerPart) {
+    const slice = pcm.subarray(offset, Math.min(offset + samplesPerPart, pcm.length));
+    parts.push({
+      blob: await encodeOggOpus(slice),
+      seconds: slice.length / OPUS_SAMPLE_RATE,
+    });
+  }
+
+  // Opus is variable rate, so a dense passage can still overshoot the estimate.
+  // Rather than send something the host will bounce, let the caller fall back.
+  if (parts.some((part) => part.blob.size > maxBytes)) return [];
+
+  return parts;
+}
+
 /* -------------------------------------------------------------- dispatch -- */
 
 /**
@@ -247,6 +293,18 @@ export async function splitByDecoding(file: File, maxBytes: number): Promise<Aud
 export async function prepareUpload(file: File, maxBytes: number): Promise<PreparedUpload> {
   if (file.size <= maxBytes) {
     return { parts: [{ blob: file, seconds: 0 }], method: "single" };
+  }
+
+  // Preferred when the browser has an Opus encoder: it usually turns the whole
+  // file into one upload instead of several, and one Whisper call instead of
+  // several. Both fallbacks below only divide, so they stay large.
+  if (await canEncodeOpus()) {
+    try {
+      const parts = await splitByOpus(file, maxBytes);
+      if (parts.length > 0) return { parts, method: "opus" };
+    } catch (err) {
+      console.warn("Opus re-encoding unavailable, falling back to splitting:", err);
+    }
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -271,7 +329,13 @@ export async function prepareUpload(file: File, maxBytes: number): Promise<Prepa
  */
 export function partFileName(original: string, index: number, total: number, mimeType: string): string {
   const stem = original.replace(/\.[^.\\/]+$/, "") || "audio";
-  const extension = mimeType.includes("mpeg") ? "mp3" : mimeType.includes("wav") ? "wav" : "";
+  const extension = mimeType.includes("ogg")
+    ? "ogg"
+    : mimeType.includes("mpeg")
+      ? "mp3"
+      : mimeType.includes("wav")
+        ? "wav"
+        : "";
 
   if (total <= 1) return extension ? `${stem}.${extension}` : original;
   return `${stem}.part${index + 1}of${total}.${extension || "bin"}`;

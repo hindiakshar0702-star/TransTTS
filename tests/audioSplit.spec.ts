@@ -116,6 +116,13 @@ test.describe("part naming", () => {
     expect(partFileName("talk.mp3", 0, 1, "audio/mpeg")).toBe("talk.mp3");
   });
 
+  test("re-encoded parts are named .ogg, whatever went in", () => {
+    // Whisper picks a demuxer from the extension, so an Opus part must not
+    // inherit the source recording's .webm.
+    expect(partFileName("recording.webm", 0, 1, "audio/ogg")).toBe("recording.ogg");
+    expect(partFileName("lecture.mp3", 0, 3, "audio/ogg")).toBe("lecture.part1of3.ogg");
+  });
+
   test("survives a name with no extension", () => {
     expect(partFileName("voicenote", 0, 2, "audio/wav")).toBe("voicenote.part1of2.wav");
   });
