@@ -41,7 +41,10 @@ export default function Sidebar({ active }: SidebarProps) {
         >
           <MenuIcon size={22} color="currentColor" />
         </button>
-        <Logo height={24} variant="dark" href="/" />
+        {/* "auto", not "dark": this bar is white in the light theme, and a dark
+            logo painted white on it leaves only the orange "TTS" visible. The
+            drawer below really is dark, so its logo stays "dark". */}
+        <Logo height={24} variant="auto" href="/" />
       </div>
 
       {/* Drawer backdrop (mobile only, only when open) */}
