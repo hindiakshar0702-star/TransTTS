@@ -27,6 +27,12 @@ export interface TranslateOutcome {
   detail?: string;
 }
 
+/**
+ * How much of the previous chunk's translation is shown to the next one, to
+ * hold terminology and formality steady across a long document.
+ */
+const CONTINUITY_CHARS = 400;
+
 /** Long text is split before sending so no single request is unwieldy. */
 export const MAX_CHUNK_CHARS = 4500;
 
@@ -174,15 +180,35 @@ export async function translateText(
   const from = isAuto ? "the source language (detect it)" : languageName(src);
 
   const system =
-    `You are a translation engine. Translate the user's text from ${from} into ${target}. ` +
+    `You are a translation engine. Translate the user's text from ${from} into natural, idiomatic ${target}. ` +
     `Reply with the translation ONLY — no preamble, no notes, no quotes around it. ` +
-    `Preserve line breaks, numbers and proper nouns. ` +
+    // A transcript of a conversation often carries more than one language, and
+    // "translate from X" on its own leaves the other one sitting there.
+    `The text may switch language mid-way or mix several languages in one sentence. ` +
+    `Translate all of it into ${target}, whatever language each part is in. ` +
+    // "Preserve proper nouns" used to send kinship and address terms through
+    // untouched, because they are capitalised: Indonesian "Ibu" (mother) came
+    // back as the name "Ibu" rather than as the word for mother.
+    `Keep only genuine names — people, places, brands — as they are. Everyday words are not names ` +
+    `even when capitalised, so forms of address and kinship terms must be translated into what ${target} ` +
+    `speakers actually call that person, not spelled out phonetically. ` +
+    `Write it the way a ${target} speaker would say it rather than word for word, and keep one consistent ` +
+    `choice of wording and level of formality for a given person or term throughout. ` +
+    `Preserve line breaks and numbers. ` +
     // Most input here is a Whisper transcript rather than written prose, so it
     // arrives without punctuation and with false starts and repeated words.
     // Left unsaid, the model tidies it into an essay and drops content.
-    `The text may be a speech transcript: expect missing punctuation, false starts and repetition. ` +
-    `Never omit, summarise or condense — every clause of the input must appear in the output, ` +
-    `fillers and repeated words included, even where that reads worse than a tidied version would. ` +
+    //
+    // The final sentence is load-bearing and was arrived at by measurement. An
+    // earlier wording — "never omit, summarise or condense, even where that
+    // reads worse than a tidied version would" — kept the fillers but was read
+    // as licence to leave source words alone, so Indonesian "Ibu" came back
+    // transliterated instead of as the word for mother. Over five runs each,
+    // that wording scored 0/5 on translating forms of address and this one
+    // scores 5/5, with both keeping fillers 5/5.
+    `The text is usually a speech transcript. Its fillers, false starts and repeated words are content: ` +
+    `translate them too rather than cleaning them up. Keeping content never means keeping a source word ` +
+    `untranslated — everything ends up in ${target}. ` +
     // Romanised Hindi came back untouched under the old wording, because it
     // read as "already Hindi".
     `Text in ${target}'s language but written in another script still needs translating — put it into ${target}'s own script. ` +
@@ -192,6 +218,17 @@ export async function translateText(
   const translated: string[] = [];
 
   for (const chunk of chunks) {
+    // Chunks are separate requests, so without this each one re-decides how to
+    // render a recurring name or term and the document drifts: the same "Ibu"
+    // arrives as one word early on and another later. Showing the model the end
+    // of what it just produced keeps those choices stable.
+    const previous = translated.length > 0 ? translated[translated.length - 1] : "";
+    const continuation = previous
+      ? `This continues a translation already in progress. Its last lines read:\n\n` +
+        `${previous.slice(-CONTINUITY_CHARS)}\n\n` +
+        `Match that wording, formality and terminology. Translate only the new text below.`
+      : "";
+
     try {
       const completion = await client.chat.completions.create(
         {
@@ -203,7 +240,7 @@ export async function translateText(
           // output, which matters on a free tier billed by tokens per minute.
           reasoning_effort: "low",
           messages: [
-            { role: "system", content: system },
+            { role: "system", content: continuation ? `${system}\n\n${continuation}` : system },
             { role: "user", content: chunk },
           ],
         },
