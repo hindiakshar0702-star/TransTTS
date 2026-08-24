@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { chunkForTranslation, MAX_CHUNK_CHARS } from "../src/lib/translate";
+import { chunkForTranslation, MAX_CHUNK_CHARS, needsPronunciation } from "../src/lib/translate";
 
 /**
  * Chunking for translation. The old implementation sliced every 4500 characters
@@ -115,4 +115,39 @@ test("regression: the old fixed-width slice broke words, this does not", () => {
   for (const chunk of chunkForTranslation(text)) {
     for (const w of words(chunk)) expect(original.has(w)).toBe(true);
   }
+});
+
+/**
+ * Whether a result needs a pronunciation line under it.
+ *
+ * The point of the line is to let someone sound out a translation written in a
+ * script they cannot read. Printing it under a Devanagari result would just
+ * repeat the result, so those targets are excluded — and getting that wrong is
+ * invisible in a screenshot of any single language.
+ */
+test.describe("pronunciation guide", () => {
+  test("offered for scripts a Hindi reader cannot sound out", () => {
+    for (const code of ["bn", "te", "ml", "kn", "or", "ur", "ta", "gu", "ja", "ar", "zh", "en", "fr"]) {
+      expect(needsPronunciation(code)).toBe(true);
+    }
+  });
+
+  test("skipped where the result is already Devanagari", () => {
+    for (const code of ["hi", "mr", "ne", "sa"]) {
+      expect(needsPronunciation(code)).toBe(false);
+    }
+  });
+
+  test("skipped for anything that is not a language code", () => {
+    // "auto" is a UI choice and never a target; the rest are junk that must not
+    // reach the transliterator.
+    for (const code of ["auto", "", "zz9", "english", "__proto__"]) {
+      expect(needsPronunciation(code)).toBe(false);
+    }
+  });
+
+  test("matches on the base language, not the region", () => {
+    expect(needsPronunciation("hi-IN")).toBe(false);
+    expect(needsPronunciation("bn-BD")).toBe(true);
+  });
 });

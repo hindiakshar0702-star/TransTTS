@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { guard } from "@/lib/api-guard";
-import { translateText, isValidLangCode } from "@/lib/translate";
+import { translateText, isValidLangCode, needsPronunciation, transliterateToDevanagari } from "@/lib/translate";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -42,9 +42,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // A pronunciation guide, for results in a script the reader cannot sound
+    // out. Best-effort: it is generated after the translation is already in
+    // hand, and an empty string simply hides the line.
+    const pronunciation = needsPronunciation(String(targetLang))
+      ? await transliterateToDevanagari(outcome.text)
+      : "";
+
     return NextResponse.json({
       originalText: text,
       translatedText: outcome.text,
+      pronunciation,
       sourceLang: sourceLang || "auto",
       targetLang,
       engine: "Groq (Free)",

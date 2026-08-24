@@ -52,6 +52,13 @@ function TranslateContent() {
   const { showToast } = useToast();
   const [sourceText, setSourceText] = usePersistedState("translate_source", "");
   const [translatedText, setTranslatedText] = usePersistedState("translate_result", "");
+  /**
+   * The translation rewritten in Devanagari, so a result in Bengali, Telugu,
+   * Urdu, Japanese or anything else can be read aloud without knowing that
+   * script. Empty when the target is already Devanagari, or when the
+   * best-effort transliteration failed.
+   */
+  const [pronunciation, setPronunciation] = usePersistedState("translate_pronunciation", "");
   const [sourceLang, setSourceLang] = usePersistedState("translate_srcLang", "auto");
   const [targetLang, setTargetLang] = usePersistedState("translate_tgtLang", "hi");
   const [status, setStatus] = usePersistedState<"idle" | "translating" | "done" | "error">("translate_status", "idle");
@@ -84,6 +91,7 @@ function TranslateContent() {
     clearPersistedState("translate_");
     setSourceText("");
     setTranslatedText("");
+    setPronunciation("");
     setSourceLang("auto");
     setTargetLang("hi");
     setStatus("idle");
@@ -121,6 +129,7 @@ function TranslateContent() {
 
       const data = await res.json();
       setTranslatedText(data.translatedText);
+      setPronunciation(data.pronunciation || "");
       setEngine(data.engine);
       setStatus("done");
 
@@ -449,6 +458,43 @@ function TranslateContent() {
                 value={translatedText}
                 readOnly
               />
+
+              {pronunciation && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    padding: "12px 14px",
+                    borderRadius: "var(--radius-sm)",
+                    background: "var(--glass2)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 8,
+                      marginBottom: 6,
+                    }}
+                  >
+                    <span style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      Pronunciation (Devanagari)
+                    </span>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px" }}
+                      onClick={() => {
+                        navigator.clipboard.writeText(pronunciation);
+                        showToast("Pronunciation copied!", "success");
+                      }}
+                    >
+                      <CopyIcon size={12} color="currentColor" /> Copy
+                    </button>
+                  </div>
+                  <div style={{ fontSize: "0.92rem", lineHeight: 1.7, color: "var(--text)" }}>{pronunciation}</div>
+                </div>
+              )}
             </div>
 
             <div className="studio-card-footer">

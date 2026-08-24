@@ -276,3 +276,76 @@ export async function translateText(
 
   return { ok: true, text: translated.join(" ") };
 }
+
+/**
+ * Scripts that a Hindi reader can already sound out, so a pronunciation line
+ * under the translation would just repeat it.
+ */
+const DEVANAGARI_LANGS = new Set(["hi", "mr", "ne", "sa"]);
+
+/** Whether a pronunciation guide is worth generating for this target. */
+export function needsPronunciation(targetLang: string): boolean {
+  return isValidLangCode(targetLang) && !DEVANAGARI_LANGS.has(targetLang.slice(0, 2));
+}
+
+/**
+ * Rewrite `text` in Devanagari so a Hindi reader can say it aloud.
+ *
+ * This is transliteration, not translation: the words stay in their own
+ * language and only the script changes, which is what lets someone read a
+ * Bengali or Telugu or Japanese result out loud without knowing the script.
+ *
+ * Deliberately a separate request rather than a second field on the
+ * translation call — asking for two different outputs at once destabilised the
+ * translation itself, and that is the part that matters.
+ *
+ * Returns "" on any failure. A missing pronunciation line is a small loss; a
+ * failed translation because of it would not be.
+ */
+export async function transliterateToDevanagari(text: string): Promise<string> {
+  const client = getGroqClient();
+  if (!client || !text.trim()) return "";
+
+  const system =
+    `You are a transliteration engine, not a translator. Rewrite the user's text in Devanagari script ` +
+    `so a Hindi reader can say it aloud and produce the original sounds. ` +
+    // Without this it quietly slips into translating: Bengali "করুন" came back
+    // as Hindi "करें" (its meaning) instead of "करुन" (its sound).
+    `The output stays in the SAME language as the input — only the script changes. ` +
+    `Never replace a word with its Hindi meaning: a reader who knows the original language must ` +
+    `recognise every word. ` +
+    // Measured on a 15-word Bengali line: without this the model dropped a
+    // clause in two runs out of three.
+    `Every word of the input must appear, in the same order, with nothing skipped or summarised. ` +
+    `Reply with the transliteration ONLY — no preamble, no notes.`;
+
+  const chunks = chunkForTranslation(text);
+  const out: string[] = [];
+
+  for (const chunk of chunks) {
+    try {
+      const completion = await client.chat.completions.create(
+        {
+          model: TRANSLATE_MODEL,
+          temperature: 0,
+          // "low" dropped words and translated them; "medium" was complete and
+          // accurate across every run of the same Bengali sample.
+          reasoning_effort: "medium",
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: chunk },
+          ],
+        },
+        { timeout: 45_000 }
+      );
+      const piece = cleanOutput(completion.choices[0]?.message?.content ?? "");
+      if (!piece) return "";
+      out.push(piece);
+    } catch (err) {
+      console.error("[translate] transliteration failed:", err);
+      return "";
+    }
+  }
+
+  return out.join(" ");
+}
