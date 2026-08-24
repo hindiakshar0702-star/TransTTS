@@ -19,8 +19,11 @@ export default function Navbar() {
   return (
     <nav className="landing-nav">
       <div className="landing-nav-inner">
-        {/* Logo */}
-        <Logo height={28} variant="light" href="/" />
+        {/* "auto" so the wordmark follows the theme token. This nav uses the
+            landing chrome, which turns dark under <html data-theme="dark">, and
+            a hardcoded "light" would paint "Trans" near-black on it — the same
+            way "dark" made it white on the white mobile top bar. */}
+        <Logo height={28} variant="auto" href="/" />
 
         {/* Navigation Links with Glossy Pill & Vector Lucide Icon Badges */}
         <ul className="landing-nav-links">
