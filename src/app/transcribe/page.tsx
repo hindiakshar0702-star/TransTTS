@@ -307,7 +307,7 @@ export default function TranscribePage() {
               )}
 
               {/* Sleek Compact Controls Row (Dropdown & Button compact height ~40px) */}
-              <div style={{ display: "flex", alignItems: "flex-end", gap: "14px", marginTop: "20px" }}>
+              <div className="form-action-row" style={{ display: "flex", alignItems: "flex-end", gap: "14px", marginTop: "20px" }}>
                 
                 {/* Compact Dropdown */}
                 <div style={{ flex: "0 0 210px" }}>

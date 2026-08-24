@@ -625,8 +625,48 @@ select.select-input:focus {
   /* Pages set grid-template-columns inline, which beats plain media rules.
      !important collapses those multi-column grids to a single column on mobile. */
   .teleprompter-grid { grid-template-columns: 1fr !important; }
+  .teleprompter-controls-grid { grid-template-columns: 1fr !important; }
   .bento-grid { grid-template-columns: 1fr !important; }
   .bento-grid > * { grid-column: auto !important; }
+
+  /* A grid or flex item's default minimum size is its content, not zero, so a
+     single child that refuses to wrap widens the whole track and carries every
+     sibling past the right edge with it. Measured on /record: the teleprompter
+     controls row would not go below 382px, and laid out a 382px column inside
+     a 343px grid, pushing all three cards 23px off screen.
+
+     Collapsing the columns above is not enough on its own — 1fr still resolves
+     to the widest content unless the item is allowed to shrink. */
+  .teleprompter-grid > *,
+  .teleprompter-controls-grid > *,
+  .translate-grid > *,
+  .translate-studio-grid > *,
+  .voice-grid > *,
+  .dashboard-grid > * { min-width: 0; }
+
+  /* Same reason one level down: a card's own header puts a title and two
+     buttons in one row, and that row's content decides how narrow the card is
+     allowed to be. */
+  .studio-card > *,
+  .studio-card-header > * { min-width: 0; }
+  .studio-card-header { flex-wrap: wrap; gap: 8px; }
+
+  /* Page titles lay an icon beside the heading in a flex row. At the desktop
+     size the heading wraps to three lines on a phone and leaves the icon
+     floating, vertically centred, out in the margin. */
+  .app-header h1 {
+    font-size: 1.55rem !important;
+    gap: 8px !important;
+    align-items: flex-start !important;
+    line-height: 1.25;
+  }
+  .app-header h1 > svg { flex-shrink: 0; margin-top: 2px; }
+
+  /* Three items sharing one row — title, Clear Script, and the edit hint —
+     each end up two words wide on a phone. Wrapping puts the title on its own
+     line and the controls under it. */
+  .teleprompter-header { flex-wrap: wrap; gap: 8px; }
+  .teleprompter-header > * { min-width: 0; }
 }
 
 @media (max-width: 600px) {
@@ -1672,4 +1712,16 @@ textarea:focus-visible {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(clamp(96px, 30%, 150px), 1fr));
   gap: 14px;
+}
+
+@media (max-width: 768px) {
+  /* A row of form controls sized for a desktop column — a fixed-width select
+     beside a button that refuses to shrink — adds up to more than a phone is
+     wide, and takes its card off the right edge with it. Measured on
+     /transcribe: 210px of select plus 188px of button laid out a 435px card in
+     a 375px viewport.
+     Stacking them is the only fix that does not truncate a control: both
+     children were explicitly sized, so the widths have to be overridden. */
+  .form-action-row { flex-wrap: wrap; }
+  .form-action-row > * { flex: 1 1 100% !important; min-width: 0; }
 }

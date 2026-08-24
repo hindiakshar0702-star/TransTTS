@@ -745,8 +745,8 @@ export default function VoiceRecorderTeleprompter({ onSave, onCancel }: VoiceRec
             <SettingsIcon size={16} color="var(--accent)" /> Teleprompter Controls
           </h4>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-            
+          <div className="teleprompter-controls-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+
             {/* Text Size */}
             <div>
               <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-dim)", marginBottom: "6px" }}>TEXT SIZE</div>
