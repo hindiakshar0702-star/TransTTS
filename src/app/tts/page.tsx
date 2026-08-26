@@ -374,7 +374,9 @@ function TTSContent() {
                   onLoadedMetadata={() => setAudioDuration(audioRef.current?.duration || 0)}
                   onEnded={() => setIsPlaying(false)} />
 
-                <Waveform audioRef={audioRef} isPlaying={isPlaying} />
+                {/* The data: URL, not the blob one: the envelope is decoded in-page and
+                    the CSP's connect-src refuses a fetch of blob:. */}
+                <Waveform src={audioUrl} audioRef={audioRef} isPlaying={isPlaying} />
 
                 <div className="audio-player" style={{ margin: "12px 0 16px 0" }}>
                   <button className="play-btn" onClick={togglePlay} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}>

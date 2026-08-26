@@ -97,3 +97,68 @@ test.describe("TTS playback", () => {
     expect(state.duration).toBeGreaterThan(0);
   });
 });
+
+/**
+ * The clip's silhouette under the player.
+ *
+ * Two failures to guard, and both looked like styling problems rather than
+ * bugs.
+ *
+ * It used to plot a live 64-point FFT. Speech puts nearly all its energy in the
+ * first few of those 32 bins, so most bars sat pinned at their minimum height
+ * forever and it read as a broken chart. Drawing the clip's amplitude envelope
+ * instead means every bar carries signal — which is only true if the heights
+ * actually vary.
+ *
+ * And the class name `waveform-bar` is also defined in landing.css, for the
+ * marketing page's decorative pulse. Both stylesheets are global, so the
+ * landing rule painted every bar the same orange and animated them, erasing the
+ * played/unplayed distinction entirely. Hence the deliberately distinct
+ * `clip-wave-*` names, and hence checking the colours differ rather than
+ * trusting the class list.
+ */
+test.describe("clip silhouette", () => {
+  test("every bar carries signal, rather than most sitting at the floor", async ({ page }) => {
+    await page.goto("/tts");
+    await page.locator("textarea").first().fill("A sentence with a pause, and then some more words after it.");
+    await page.getByRole("button", { name: /generate voice/i }).click();
+
+    const bars = page.locator(".clip-wave-bar");
+    await expect(bars.first()).toBeVisible({ timeout: 60_000 });
+
+    const heights = await bars.evaluateAll((els) =>
+      els.map((el) => parseFloat((el as HTMLElement).style.height) || 0)
+    );
+
+    expect(heights.length).toBeGreaterThan(16);
+    // The old version produced two or three distinct values across 32 bars.
+    expect(new Set(heights.map((h) => Math.round(h))).size).toBeGreaterThan(10);
+    expect(Math.max(...heights)).toBeGreaterThan(50);
+    // A flat chart would put nearly everything at the minimum.
+    const atFloor = heights.filter((h) => h < 10).length;
+    expect(atFloor).toBeLessThan(heights.length * 0.6);
+  });
+
+  test("played and unplayed are told apart, despite the landing page's identical class name", async ({ page }) => {
+    await page.goto("/tts");
+    await page.locator("textarea").first().fill("Another line to generate and then scrub through.");
+    await page.getByRole("button", { name: /generate voice/i }).click();
+    await expect(page.locator(".clip-wave-bar").first()).toBeVisible({ timeout: 60_000 });
+
+    // Actually play for a moment: progress is read from the element while
+    // playing, so nudging currentTime on a paused player changes nothing and
+    // would leave every bar in the same state.
+    await page.locator("button.play-btn").click();
+    await page.waitForTimeout(1200);
+
+    const colours = await page.locator(".clip-wave-bar").evaluateAll((els) => {
+      const first = getComputedStyle(els[2]).backgroundColor;
+      const last = getComputedStyle(els[els.length - 3]).backgroundColor;
+      return { first, last, animation: getComputedStyle(els[0]).animationName };
+    });
+
+    expect(colours.first).not.toBe(colours.last);
+    // The landing rule animates its bars; ours must not inherit that.
+    expect(colours.animation).toBe("none");
+  });
+});

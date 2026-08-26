@@ -836,14 +836,46 @@ select.select-input:focus {
 }
 
 /* ===== WAVEFORM ===== */
-.waveform-container {
-  display: flex; align-items: flex-end; gap: 2px; height: 60px;
-  padding: 8px 0; justify-content: center;
+/* The clip's envelope, mirrored about a centre axis. Bars grow from the middle
+   rather than off a baseline, so a quiet moment reads as a narrow waist instead
+   of a row of dead stubs sitting on the floor. */
+.clip-wave {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+  height: 64px;
+  padding: 8px 2px;
+  cursor: pointer;
 }
-.waveform-bar {
-  width: 4px; border-radius: 2px;
-  background: linear-gradient(to top, var(--accent), var(--accent2));
-  transition: height 0.1s ease; min-height: 4px;
+.clip-wave--empty {
+  /* Held open while the envelope is measured, so the card cannot jump. */
+  cursor: default;
+}
+
+.clip-wave-bar {
+  flex: 1 1 0;
+  min-width: 2px;
+  max-width: 5px;
+  border-radius: 999px;
+  background: var(--border2);
+  transition: background-color 0.18s ease, transform 0.18s ease;
+}
+
+/* Already heard: lit in the brand orange. */
+.clip-wave-bar--played { background: var(--accent); }
+
+/* The one bar at the playhead. A single lifted bar is enough to read as motion;
+   animating all fifty-six would be noise. */
+.clip-wave-bar--head {
+  background: var(--accent2);
+  transform: scaleX(1.6);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clip-wave-bar { transition: none; }
+  .clip-wave-bar--head { transform: none; }
 }
 
 /* ===== EXPORT MODAL ===== */
