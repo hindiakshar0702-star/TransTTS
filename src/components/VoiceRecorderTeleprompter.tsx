@@ -286,8 +286,28 @@ export default function VoiceRecorderTeleprompter({ onSave, onCancel }: VoiceRec
 
           rnnoiseNodeRef.current = rnnoiseNode;
 
-          // Connect: source -> rnnoise worklet -> analyser -> destination
-          sourceNode.connect(rnnoiseNode);
+          // Rumble guard ahead of the denoiser: air conditioning, traffic,
+          // desk vibration and the DC-ward end of handling noise all sit below
+          // where speech begins, and RNNoise is not a filter — it will happily
+          // pass a 40 Hz hum through to the encoder.
+          //
+          // 75 Hz leaves the lowest male fundamentals (~85 Hz) alone. Raising
+          // it further is tempting and wrong: on the recording that prompted
+          // this, the offending knock peaked at 129 Hz, and a corner high
+          // enough to catch that would take the voice with it. This is hygiene
+          // for what lies below speech, not a fix for thumps inside it.
+          const rumbleFilter = audioCtx.createBiquadFilter();
+          rumbleFilter.type = "highpass";
+          rumbleFilter.frequency.value = 75;
+          // Web Audio reads Q for a highpass in DECIBELS, not as a plain Q
+          // factor, so the usual Butterworth 0.707 is not flat here — measured,
+          // it lifts 100 Hz by 1.7 dB, right where male fundamentals sit. Zero
+          // is the flattest this filter gets.
+          rumbleFilter.Q.value = 0;
+
+          // Connect: source -> rumble filter -> rnnoise worklet -> analyser -> destination
+          sourceNode.connect(rumbleFilter);
+          rumbleFilter.connect(rnnoiseNode);
           rnnoiseNode.connect(analyser);
           analyser.connect(destinationNode);
           workletSuccess = true;

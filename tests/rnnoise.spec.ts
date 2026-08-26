@@ -114,3 +114,69 @@ test.describe("RNNoise worklet", () => {
     expect(result.maxJump).toBeLessThan(0.2);
   });
 });
+
+/**
+ * The rumble filter that sits in front of the denoiser.
+ *
+ * RNNoise is a model, not a filter: it will pass a 40 Hz hum straight through
+ * to the encoder. Air conditioning, traffic and desk vibration all live below
+ * where speech starts, so a high-pass ahead of it is cheap insurance.
+ *
+ * Two things here are easy to get wrong and silent when wrong.
+ *
+ * The corner has to stay below the lowest male fundamental (~85 Hz). Raising it
+ * to chase a specific noise is a trap — the knock that prompted this filter
+ * peaked at 129 Hz, and a corner high enough to catch that removes the voice
+ * too.
+ *
+ * And Web Audio reads a highpass's `Q` in DECIBELS rather than as a Q factor,
+ * so the reflex value of 0.707 is not the flat Butterworth response it looks
+ * like: it lifts 100 Hz by 1.7 dB, precisely where those fundamentals sit.
+ */
+test.describe("rumble filter", () => {
+  const CORNER = 75;
+
+  async function response(page: import("@playwright/test").Page, q: number, freqs: number[]) {
+    return page.evaluate(
+      ({ q, freqs, corner }) => {
+        const ctx = new OfflineAudioContext(1, 128, 48000);
+        const filter = ctx.createBiquadFilter();
+        filter.type = "highpass";
+        filter.frequency.value = corner;
+        filter.Q.value = q;
+
+        const input = new Float32Array(freqs);
+        const mag = new Float32Array(freqs.length);
+        const phase = new Float32Array(freqs.length);
+        filter.getFrequencyResponse(input, mag, phase);
+        return Array.from(mag, (m) => 20 * Math.log10(m || 1e-12));
+      },
+      { q, freqs, corner: CORNER }
+    );
+  }
+
+  test("cuts what lies below speech", async ({ page }) => {
+    await page.goto("/record");
+    const [at20, at40, at60] = await response(page, 0, [20, 40, 60]);
+    expect(at20).toBeLessThan(-18); // deep rumble, near-gone
+    expect(at40).toBeLessThan(-8); // mains-adjacent hum and desk vibration
+    expect(at60).toBeLessThan(-1);
+  });
+
+  test("leaves the voice alone, lowest male fundamentals included", async ({ page }) => {
+    await page.goto("/record");
+    const [at85, at129, at200, at1k] = await response(page, 0, [85, 129, 200, 1000]);
+    for (const gain of [at85, at129, at200, at1k]) {
+      expect(Math.abs(gain)).toBeLessThan(2);
+    }
+  });
+
+  test("Q stays at the flattest setting, because Web Audio reads it in dB", async ({ page }) => {
+    await page.goto("/record");
+    const flat = Math.max(...(await response(page, 0, [85, 100, 129])));
+    const reflex = Math.max(...(await response(page, 0.707, [85, 100, 129])));
+    // The "obvious" Butterworth value is measurably peakier than zero here.
+    expect(reflex).toBeGreaterThan(flat);
+    expect(flat).toBeLessThan(1.5);
+  });
+});
