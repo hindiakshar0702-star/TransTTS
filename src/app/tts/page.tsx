@@ -58,6 +58,52 @@ function TTSContent() {
   const [voiceSearch, setVoiceSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
 
+  /**
+   * The same audio, wrapped as a blob: URL for the player.
+   *
+   * The API returns it inline as a base64 data: URL, and the app's CSP allows
+   * media from 'self' and blob: only. Chrome enforces that by refusing the
+   * element outright — "Media load rejected by URL safety check", readyState
+   * stuck at 0 — so the file arrived intact and nothing ever played. Re-wrapping
+   * the identical bytes as a blob satisfies the policy without widening it to
+   * accept data: everywhere.
+   *
+   * The data: URL stays the value that is persisted, because it survives a
+   * reload; a blob URL dies with the document that created it.
+   */
+  const [playableUrl, setPlayableUrl] = useState("");
+
+  useEffect(() => {
+    if (!audioUrl) {
+      setPlayableUrl("");
+      return;
+    }
+    // A blob or same-origin URL is already playable; only data: needs work.
+    if (!audioUrl.startsWith("data:")) {
+      setPlayableUrl(audioUrl);
+      return;
+    }
+
+    let created = "";
+    try {
+      const comma = audioUrl.indexOf(",");
+      const mime = audioUrl.slice(5, comma).replace(";base64", "") || "audio/mpeg";
+      const binary = atob(audioUrl.slice(comma + 1));
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      created = URL.createObjectURL(new Blob([bytes], { type: mime }));
+      setPlayableUrl(created);
+    } catch {
+      // A malformed payload should leave the player empty rather than throw
+      // during render.
+      setPlayableUrl("");
+    }
+
+    return () => {
+      if (created) URL.revokeObjectURL(created);
+    };
+  }, [audioUrl]);
+
   const audioRef = useRef<HTMLAudioElement>(null);
   const { showToast } = useToast();
 
@@ -117,7 +163,8 @@ function TTSContent() {
       const data = await res.json();
 
       // The server synthesises in-request and returns the audio inline as a
-      // base64 data URL, which <audio> can play and the download link can use.
+      // base64 data URL. That is what gets persisted, but not what the player
+      // is handed — see playableUrl above, and the CSP that makes it necessary.
       const finalUrl: string = data.audioUrl;
       setAudioUrl(finalUrl);
       setStatus("done");
@@ -156,10 +203,11 @@ function TTSContent() {
   const fmt = (s: number) => `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, "0")}`;
 
   const downloadAudio = () => {
-    if (!audioUrl) return;
-    // audioUrl is a base64 data URL — the download attribute saves it directly.
+    if (!playableUrl) return;
+    // The blob URL, not the data: one — a large base64 href is refused by some
+    // browsers, and the bytes are identical either way.
     const a = document.createElement("a");
-    a.href = audioUrl;
+    a.href = playableUrl;
     a.download = `speech-${voice}-${Date.now()}.mp3`;
     a.click();
   };
@@ -318,7 +366,10 @@ function TTSContent() {
                   <span className="badge badge-success" style={{ fontSize: "0.7rem", borderRadius: "100px", padding: "4px 10px" }}>Ready</span>
                 </div>
 
-                <audio ref={audioRef} src={audioUrl} crossOrigin="anonymous"
+                {/* undefined, not "": the blob URL is derived in an effect, so it is
+                    briefly empty on the render right after generation, and an
+                    empty src makes the browser re-request the page itself. */}
+                <audio ref={audioRef} src={playableUrl || undefined}
                   onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime || 0)}
                   onLoadedMetadata={() => setAudioDuration(audioRef.current?.duration || 0)}
                   onEnded={() => setIsPlaying(false)} />

@@ -72,6 +72,34 @@ export default function DashboardPage() {
     }
   }, [loadJobs]);
 
+  /**
+   * Open a stored TTS clip in a new tab.
+   *
+   * History keeps the audio as the base64 data: URL the API returned, and
+   * Chrome refuses to navigate a tab to a data: URL at all — the old
+   * window.open(dataUrl) opened a blank tab every time. The same bytes as a
+   * blob: URL navigate fine and satisfy the CSP, which allows blob: for media.
+   */
+  const playStoredAudio = (url: string) => {
+    if (!url.startsWith("data:")) {
+      window.open(url);
+      return;
+    }
+    try {
+      const comma = url.indexOf(",");
+      const mime = url.slice(5, comma).replace(";base64", "") || "audio/mpeg";
+      const binary = atob(url.slice(comma + 1));
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blobUrl = URL.createObjectURL(new Blob([bytes], { type: mime }));
+      window.open(blobUrl);
+      // The tab holds its own reference; this only drops ours.
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+    } catch {
+      showToast("That recording could not be opened", "error");
+    }
+  };
+
   const handleDelete = (id: string) => {
     deleteFromHistory(id);
     loadJobs();
@@ -306,7 +334,7 @@ export default function DashboardPage() {
                     <CopyIcon size={14} color="currentColor" />
                   </button>
                   {item.type === "tts" && item.audioUrl && (
-                    <button className="btn btn-ghost btn-sm" onClick={() => window.open(item.audioUrl!)} title="Play Audio">
+                    <button className="btn btn-ghost btn-sm" onClick={() => playStoredAudio(item.audioUrl!)} title="Play Audio">
                       <PlayIcon size={14} color="currentColor" />
                     </button>
                   )}
