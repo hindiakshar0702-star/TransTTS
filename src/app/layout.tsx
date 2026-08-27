@@ -32,9 +32,12 @@ export const viewport: Viewport = {
   themeColor: "#FF8000",
 };
 
-const ROOT_TITLE = "TransTTS — Transcribe, Translate & Generate AI Voice";
+// Titled around the primary search intent (text to speech / voice generation),
+// which is where the search demand is, while the tool also transcribes and
+// translates. ~57 chars, so Google shows it whole.
+const ROOT_TITLE = "TransTTS – Free AI Text to Speech & Hindi Voice Generator";
 const ROOT_DESCRIPTION =
-  "Record audio, transcribe speech to text with Whisper AI, translate into Hindi and 99+ languages, and generate natural AI voices — all in one workspace.";
+  "TransTTS is a free AI text-to-speech and voice generator. Convert text into natural Hindi, English and multilingual AI voices online — no signup, no cost.";
 
 export const metadata: Metadata = {
   // Resolves every relative URL below (canonical, OG images) against the real
@@ -49,15 +52,18 @@ export const metadata: Metadata = {
   applicationName: SITE_NAME,
   manifest: "/manifest.json",
   alternates: { canonical: "/" },
+  // Modern search engines ignore the keywords meta for ranking; kept short and
+  // honest rather than stuffed. The real signals are in the title, headings,
+  // on-page copy and structured data.
   keywords: [
-    "audio transcription",
-    "speech to text",
-    "Whisper AI",
-    "translate to Hindi",
+    "AI text to speech",
     "text to speech",
     "AI voice generator",
-    "video transcription",
-    "subtitle generator",
+    "free text to speech",
+    "Hindi text to speech",
+    "multilingual text to speech",
+    "text to voice online",
+    "TTS online",
   ],
   authors: [{ name: SITE_NAME }],
   creator: SITE_NAME,

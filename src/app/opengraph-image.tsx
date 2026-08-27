@@ -7,7 +7,7 @@ import { ImageResponse } from "next/og";
  * having to maintain a 1200x630 PNG by hand.
  */
 
-export const alt = "TransTTS — Transcribe, Translate & Generate AI Voice";
+export const alt = "TransTTS — Free AI Text to Speech & Voice Generator";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -63,12 +63,12 @@ export default async function Image() {
             maxWidth: 900,
           }}
         >
-          Transcribe, translate and generate voice
+          Free AI Text to Speech & Voice Generator
         </div>
 
         <div style={{ fontSize: 30, color: "#a8a8a3", marginTop: 28, maxWidth: 860, lineHeight: 1.4 }}>
-          Whisper AI transcription, Hindi and 99+ language translation, and natural
-          text-to-speech — in one workspace.
+          Natural Hindi, English and multilingual AI voices online — plus Whisper
+          transcription and translation.
         </div>
 
         <div style={{ display: "flex", marginTop: 52 }}>

@@ -33,16 +33,18 @@ export default function HeroSection() {
           <div ref={leftRef} className="bento-card hero-card-left">
             <div>
               <h1 className="hero-title">
-                Transcribe, translate
+                Free AI Text to
                 <br />
-                &amp; voice
+                Speech &amp; Voice
                 <br />
-                in seconds
+                Generator
               </h1>
 
               <p className="hero-desc">
-                Turn any audio into accurate text, translate across 25+ languages,
-                and generate natural speech — all in one fast, private workspace.
+                Convert your text into natural-sounding AI voices with TransTTS.
+                Generate Hindi, English and multilingual speech online — quickly
+                and free. You can also transcribe audio and translate across 25+
+                languages.
               </p>
 
               <div className="hero-actions">

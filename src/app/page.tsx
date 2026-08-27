@@ -7,6 +7,7 @@ import BentoGrid from "@/components/landing/BentoGrid";
 import StatsSection from "@/components/landing/StatsSection";
 import TestimonialsSection from "@/components/landing/TestimonialsSection";
 import CTASection from "@/components/landing/CTASection";
+import SeoContent from "@/components/landing/SeoContent";
 import LandingFooter from "@/components/landing/LandingFooter";
 
 export default function HomePage() {
@@ -17,6 +18,7 @@ export default function HomePage() {
       <BentoGrid />
       <StatsSection />
       <TestimonialsSection />
+      <SeoContent />
       <CTASection />
       <LandingFooter />
     </div>

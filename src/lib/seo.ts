@@ -78,6 +78,10 @@ export function pageMetadata({ title, description, path, noIndex }: PageSeoInput
  */
 export const PUBLIC_ROUTES: Array<{ path: string; priority: number; changeFrequency: "daily" | "weekly" | "monthly" | "yearly" }> = [
   { path: "/", priority: 1.0, changeFrequency: "weekly" },
+  // The public tools — the pages that answer the primary searches.
+  { path: "/tts", priority: 0.9, changeFrequency: "monthly" },
+  { path: "/transcribe", priority: 0.9, changeFrequency: "monthly" },
+  { path: "/translate", priority: 0.8, changeFrequency: "monthly" },
   { path: "/about", priority: 0.8, changeFrequency: "monthly" },
   { path: "/contact", priority: 0.7, changeFrequency: "monthly" },
   { path: "/privacy-policy", priority: 0.3, changeFrequency: "yearly" },

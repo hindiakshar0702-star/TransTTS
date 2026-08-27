@@ -1621,3 +1621,48 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ===== HOMEPAGE SEO CONTENT ===== */
+.seo-content {
+  padding: 64px 0 24px;
+}
+.seo-content-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 32px 48px;
+}
+.seo-content h2 {
+  font-family: var(--font-title, var(--font-outfit));
+  font-size: 1.35rem;
+  font-weight: 800;
+  margin-bottom: 10px;
+  color: var(--color-landing-text, var(--text));
+}
+.seo-content p {
+  font-size: 0.95rem;
+  line-height: 1.75;
+  color: var(--color-landing-text-dim, var(--text-dim));
+  max-width: 60ch;
+}
+.seo-lang-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 0;
+}
+.seo-lang-list li {
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--glass2, rgba(0,0,0,0.04));
+  border: 1px solid var(--border, rgba(0,0,0,0.08));
+  color: var(--color-landing-text, var(--text));
+}
+@media (max-width: 768px) {
+  .seo-content { padding: 40px 0 8px; }
+  .seo-content-grid { grid-template-columns: 1fr; gap: 28px; }
+  .seo-content h2 { font-size: 1.2rem; }
+}

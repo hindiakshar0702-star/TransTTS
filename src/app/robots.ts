@@ -2,10 +2,14 @@ import type { MetadataRoute } from "next";
 import { absoluteUrl } from "@/lib/seo";
 
 /**
- * Served at /robots.txt. Allows the public marketing/legal pages and blocks
- * everything a crawler has no business in: the API, auth flows, and the
- * signed-in app surfaces (which redirect to /login anyway, so crawling them
- * only burns crawl budget).
+ * Served at /robots.txt.
+ *
+ * The three tools are public in this variant and are the pages that answer the
+ * primary searches ("text to speech online", "transcribe audio", "translate"),
+ * so they are crawlable. Only the personal app surfaces and the API stay
+ * blocked — /dashboard and /settings hold a viewer's own history and preferences
+ * and rank for nothing, and /record is a live-capture surface with no indexable
+ * content.
  */
 export default function robots(): MetadataRoute.Robots {
   return {
@@ -13,15 +17,7 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: "*",
         allow: "/",
-        disallow: [
-          "/api/",
-          "/dashboard",
-          "/settings",
-          "/record",
-          "/transcribe",
-          "/translate",
-          "/tts",
-        ],
+        disallow: ["/api/", "/dashboard", "/settings", "/record"],
       },
     ],
     sitemap: absoluteUrl("/sitemap.xml"),

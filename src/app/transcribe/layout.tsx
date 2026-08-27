@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
 import { pageMetadata } from "@/lib/seo";
 
-// Signed-in / credential surface: kept out of search results. The page is a
-// client component, so the title and robots directives live here.
+// Public tool; indexable so it can answer audio-to-text searches. Title and
+// canonical live here because the page is a client component.
 export const metadata: Metadata = pageMetadata({
-  title: "Transcribe Audio",
-  description: "Turn speech into accurate text with Whisper AI.",
+  title: "Audio & Video to Text Transcription",
+  description:
+    "Transcribe audio and video to accurate text with Whisper AI across 99+ languages, with timestamps. Free online transcription — no signup.",
   path: "/transcribe",
-  noIndex: true,
 });
 
 export default function TranscribeLayout({ children }: { children: React.ReactNode }) {

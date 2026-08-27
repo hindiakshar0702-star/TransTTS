@@ -21,11 +21,12 @@ export default function StructuredData() {
         url,
         logo: `${url}/logo.svg`,
         description:
-          "TransTTS builds speech and language tools: audio transcription, translation and AI voice generation.",
+          "TransTTS is a free AI text-to-speech and voice generator that also transcribes and translates.",
+        // Contact is the on-site form; no email is published here, so none is
+        // asserted rather than inventing one.
         contactPoint: {
           "@type": "ContactPoint",
           contactType: "customer support",
-          email: "hello@transtts.ai",
           url: `${url}/contact`,
         },
       },
@@ -41,18 +42,19 @@ export default function StructuredData() {
         "@type": "SoftwareApplication",
         "@id": `${url}/#app`,
         name: SITE_NAME,
+        alternateName: "TransTTS AI Text to Speech",
         url,
         applicationCategory: "MultimediaApplication",
         operatingSystem: "Web browser",
         description:
-          "Record audio, transcribe speech to text with Whisper AI, translate into Hindi and 99+ languages, and generate natural AI voices.",
+          "Free AI text-to-speech and voice generator. Convert text into natural Hindi, English and multilingual AI voices online; also transcribes and translates.",
         featureList: [
-          "Audio and video transcription with timestamps",
-          "Automatic language detection across 99+ languages",
-          "Translation including English to Hindi",
-          "Text-to-speech with natural voices",
-          "Browser voice recorder with teleprompter",
-          "Transcribe videos from social media links",
+          "AI text to speech with natural voices",
+          "Free online AI voice generator",
+          "Hindi text to speech and Hindi AI voice",
+          "Multilingual speech across 15+ languages",
+          "Audio and video transcription with Whisper AI",
+          "Translation into Hindi, English and 25+ languages",
         ],
         offers: {
           "@type": "Offer",
