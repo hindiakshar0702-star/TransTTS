@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import type { TranscriptSegment } from "@/types";
+import { DownloadIcon, FileTextIcon, FilmIcon, GlobeIcon, BarChartIcon, XIcon } from "@/components/Icons";
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -27,18 +28,16 @@ function formatVttTime(s: number): string {
 }
 
 const FORMATS = [
-  { id: "txt", name: "Plain Text", icon: "📄", ext: ".txt", desc: "Simple text file" },
-  { id: "srt", name: "SRT Subtitles", icon: "🎬", ext: ".srt", desc: "SubRip format for video players" },
-  { id: "vtt", name: "WebVTT", icon: "🌐", ext: ".vtt", desc: "Web Video Text Tracks" },
-  { id: "json", name: "JSON", icon: "📊", ext: ".json", desc: "Structured data with timestamps" },
+  { id: "txt", name: "Plain Text", icon: FileTextIcon, ext: ".txt", desc: "Simple text file" },
+  { id: "srt", name: "SRT Subtitles", icon: FilmIcon, ext: ".srt", desc: "SubRip format for video players" },
+  { id: "vtt", name: "WebVTT", icon: GlobeIcon, ext: ".vtt", desc: "Web Video Text Tracks" },
+  { id: "json", name: "JSON", icon: BarChartIcon, ext: ".json", desc: "Structured data with timestamps" },
 ];
 
 export default function ExportModal({ isOpen, onClose, transcript, segments, fileName }: ExportModalProps) {
   const [selected, setSelected] = useState("txt");
 
   if (!isOpen) return null;
-
-  const baseName = fileName?.replace(/\.[^.]+$/, "") || `transcript-${Date.now()}`;
 
   const generateContent = (format: string): string => {
     switch (format) {
@@ -77,6 +76,7 @@ export default function ExportModal({ isOpen, onClose, transcript, segments, fil
   };
 
   const handleDownload = () => {
+    const baseName = fileName?.replace(/\.[^.]+$/, "") || `transcript-${Date.now()}`;
     const fmt = FORMATS.find((f) => f.id === selected)!;
     const content = generateContent(selected);
     const mimeType = selected === "json" ? "application/json" : "text/plain";
@@ -97,26 +97,35 @@ export default function ExportModal({ isOpen, onClose, transcript, segments, fil
       <div className="mobile-overlay" onClick={onClose} />
       <div className="export-modal">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h2>📥 Export Transcript</h2>
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
+          <h2 style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <DownloadIcon size={22} color="#FF8000" /> Export Transcript
+          </h2>
+          <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <XIcon size={16} color="currentColor" />
+          </button>
         </div>
 
         <div className="export-formats">
-          {FORMATS.map((fmt) => (
-            <button
-              key={fmt.id}
-              className={`export-format-btn ${selected === fmt.id ? "active" : ""}`}
-              onClick={() => setSelected(fmt.id)}
-              disabled={fmt.id !== "txt" && segments.length === 0}
-            >
-              <span style={{ fontSize: "1.3rem" }}>{fmt.icon}</span>
-              <span className="export-format-name">{fmt.name}</span>
-              <span className="export-format-desc">{fmt.desc}</span>
-              {fmt.id !== "txt" && segments.length === 0 && (
-                <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>No timestamps</span>
-              )}
-            </button>
-          ))}
+          {FORMATS.map((fmt) => {
+            const IconComp = fmt.icon;
+            return (
+              <button
+                key={fmt.id}
+                className={`export-format-btn ${selected === fmt.id ? "active" : ""}`}
+                onClick={() => setSelected(fmt.id)}
+                disabled={fmt.id !== "txt" && segments.length === 0}
+              >
+                <span style={{ fontSize: "1.3rem", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <IconComp size={22} color="currentColor" />
+                </span>
+                <span className="export-format-name">{fmt.name}</span>
+                <span className="export-format-desc">{fmt.desc}</span>
+                {fmt.id !== "txt" && segments.length === 0 && (
+                  <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>No timestamps</span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         <div className="export-preview">
@@ -126,8 +135,8 @@ export default function ExportModal({ isOpen, onClose, transcript, segments, fil
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleDownload}>
-            📥 Download {FORMATS.find((f) => f.id === selected)?.ext}
+          <button className="btn btn-primary" onClick={handleDownload} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <DownloadIcon size={16} color="#0a0a0a" /> Download {FORMATS.find((f) => f.id === selected)?.ext}
           </button>
         </div>
       </div>

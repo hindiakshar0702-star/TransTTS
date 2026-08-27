@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Offline — TransTTS</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: #f5f5f0;
+      color: #1a1a1a;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { background: #0f0f0e; color: #f5f5f0; }
+      .card { background: #1a1a18; border-color: #2e2e2a; }
+      .sub { color: #a8a8a3; }
+    }
+    .card {
+      max-width: 380px;
+      width: 100%;
+      text-align: center;
+      background: #ffffff;
+      border: 1px solid #e8e8e3;
+      border-radius: 20px;
+      padding: 40px 28px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+    }
+    .badge {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 20px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, #ff9933, #ff5500);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 6px 20px rgba(255, 128, 0, 0.35);
+    }
+    .badge svg { width: 32px; height: 32px; }
+    h1 { font-size: 1.4rem; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.02em; }
+    .sub { font-size: 0.92rem; line-height: 1.6; color: #6b6b6b; margin-bottom: 24px; }
+    button {
+      appearance: none;
+      border: none;
+      cursor: pointer;
+      background: #ff8000;
+      color: #0a0a0a;
+      font-weight: 700;
+      font-size: 0.92rem;
+      padding: 12px 28px;
+      border-radius: 100px;
+      box-shadow: 0 4px 14px rgba(255, 128, 0, 0.3);
+    }
+    button:active { transform: translateY(1px); }
+    .brand { margin-top: 22px; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.02em; opacity: 0.6; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M1 1l22 22" />
+        <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55" />
+        <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39" />
+        <path d="M10.71 5.05A16 16 0 0 1 22.58 9" />
+        <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88" />
+        <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+        <line x1="12" y1="20" x2="12.01" y2="20" />
+      </svg>
+    </div>
+    <h1>You're offline</h1>
+    <p class="sub">TransTTS needs an internet connection to transcribe, translate, and generate voice. Check your connection and try again.</p>
+    <button onclick="location.reload()">Retry</button>
+    <div class="brand">TransTTS AI</div>
+  </div>
+</body>
+</html>

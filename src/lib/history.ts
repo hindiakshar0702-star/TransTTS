@@ -12,6 +12,8 @@ export interface HistoryItem {
     duration?: number;
     transcript?: string;
     segmentCount?: number;
+    /** How many uploads the file was split into, when it exceeded the limit. */
+    uploadParts?: number;
     // Translate
     sourceText?: string;
     translatedText?: string;

@@ -1,370 +1,161 @@
 "use client";
-import { useState } from "react";
-import Navbar from "@/components/Navbar";
-import Link from "next/link";
-import { useToast } from "@/components/Toast";
 
-/**
- * Where contact submissions are sent.
- *
- * - If NEXT_PUBLIC_FORMSUBMIT_EMAIL is set at build time, we POST directly
- *   to https://formsubmit.co/ajax/<email> — no backend / DB / API key
- *   required. Submissions land in that inbox.
- * - Otherwise we fall back to our own POST /api/contact endpoint
- *   (DB-backed, optional Resend email).
- *
- * Both paths preserve the same UX: nice success card, inline errors,
- * loading state, honeypot.
- */
-const FORMSUBMIT_TARGET = process.env.NEXT_PUBLIC_FORMSUBMIT_EMAIL || "";
+import "../landing.css";
+import { useState } from "react";
+import { z } from "zod";
+import LandingNavbar from "@/components/landing/LandingNavbar";
+import LandingFooter from "@/components/landing/LandingFooter";
+import {
+  MailIcon, SendIcon, CheckCircleIcon, ClockIcon, ShieldIcon,
+  InstagramIcon, TwitterXIcon, LinkedinIcon, YoutubeIcon,
+} from "@/components/Icons";
+
+const ClientSchema = z.object({
+  name: z.string().trim().min(2, "Please enter your name"),
+  email: z.string().trim().email("Enter a valid email address"),
+  subject: z.string().trim().optional(),
+  message: z.string().trim().min(10, "Message should be at least 10 characters"),
+});
+
+const SOCIALS = [
+  { label: "Instagram", href: "https://instagram.com/transtts", Icon: InstagramIcon },
+  { label: "X (Twitter)", href: "https://x.com/transtts", Icon: TwitterXIcon },
+  { label: "LinkedIn", href: "https://linkedin.com/company/transtts", Icon: LinkedinIcon },
+  { label: "YouTube", href: "https://youtube.com/@transtts", Icon: YoutubeIcon },
+];
 
 export default function ContactPage() {
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    company: "",
-    teamSize: "",
-    message: "",
-  });
-  // Honeypot — invisible to humans, irresistible to scraping bots.
-  const [website, setWebsite] = useState("");
-  const [submitted, setSubmitted] = useState(false);
+  const [form, setForm] = useState({ name: "", email: "", subject: "", message: "" });
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const { showToast } = useToast();
+  const [status, setStatus] = useState<"idle" | "sending" | "sent">("idle");
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
+
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (loading) return;
     setError("");
 
-    // Client-side validation — server re-validates everything anyway
-    if (!formData.name.trim() || !formData.email.trim() || !formData.message.trim()) {
-      setError("Please fill all required fields.");
-      showToast("Please fill all required fields", "error");
-      return;
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      setError("Please enter a valid email address.");
-      showToast("Invalid email", "error");
-      return;
-    }
-    if (formData.message.trim().length < 10) {
-      setError("Please write at least 10 characters in your message.");
-      showToast("Message too short", "error");
+    const parsed = ClientSchema.safeParse(form);
+    if (!parsed.success) {
+      setError(parsed.error.issues[0].message);
       return;
     }
 
-    setLoading(true);
+    setStatus("sending");
     try {
-      if (FORMSUBMIT_TARGET) {
-        await submitToFormSubmit(FORMSUBMIT_TARGET, formData, website);
-      } else {
-        await submitToBackend(formData, website);
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(parsed.data),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Something went wrong. Please try again.");
+        setStatus("idle");
+        return;
       }
-
-      setSubmitted(true);
-      showToast("Message sent! We'll get back within 24 hours.", "success");
-    } catch (err) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : "Could not reach the server. Please try again.";
-      setError(msg);
-      showToast(msg.startsWith("Could not") ? "Network error — please retry" : msg, "error");
-      setLoading(false);
+      setStatus("sent");
+    } catch {
+      setError("Network error. Please try again.");
+      setStatus("idle");
     }
-  };
-
-  const handleChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-    if (error) setError("");
-  };
+  }
 
   return (
-    <>
-      <Navbar />
-      <main className="app-page">
-        <div className="container" style={{ maxWidth: 800 }}>
-          <div className="app-header fade-in">
-            <h1>🏢 <span className="gradient-text">Contact Sales</span></h1>
-            <p>Get a custom Enterprise plan tailored for your team</p>
-          </div>
+    <div className="landing-page">
+      <LandingNavbar />
 
-          {submitted ? (
-            <div className="glass-card fade-in" style={{ textAlign: "center", padding: "60px 32px" }}>
-              <div style={{ fontSize: "4rem", marginBottom: 16 }}>✅</div>
-              <h2 style={{ marginBottom: 12 }}>Thank You!</h2>
-              <p style={{ color: "var(--text-dim)", marginBottom: 8, fontSize: "1.05rem" }}>
-                We&apos;ve received your inquiry and will get back to you within <strong>24 hours</strong>.
-              </p>
-              <p style={{ color: "var(--text-muted)", marginBottom: 32 }}>
-                Check your email at <strong>{formData.email}</strong> for confirmation.
-              </p>
-              <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-                <Link href="/pricing" className="btn btn-outline">← Back to Pricing</Link>
-                <Link href="/transcribe" className="btn btn-primary">🎤 Start Transcribing</Link>
+      <main className="landing-container" style={{ padding: "96px 0 24px", maxWidth: 1000 }}>
+        <div style={{ textAlign: "center", maxWidth: 620, margin: "0 auto 40px" }}>
+          <span className="about-eyebrow">Contact Us</span>
+          <h1 className="about-title" style={{ fontSize: "clamp(1.9rem, 4.5vw, 2.8rem)" }}>
+            Let&apos;s <span className="gradient-text">talk</span>.
+          </h1>
+          <p className="about-lead">
+            Questions, feedback, or a partnership idea? Send a message and we&apos;ll get back to you.
+          </p>
+        </div>
+
+        <div className="contact-layout">
+          {/* Info column */}
+          <aside className="contact-info">
+            <div className="contact-info-item">
+              <span className="about-card-icon"><MailIcon size={20} color="#FF8000" /></span>
+              <div>
+                <h3>Email us</h3>
+                <p><a href="mailto:hello@transtts.ai">hello@transtts.ai</a></p>
               </div>
             </div>
-          ) : (
-            <>
-              {/* Enterprise Benefits */}
-              <div className="glass-card fade-in" style={{ marginBottom: 24 }}>
-                <h3 style={{ marginBottom: 16 }}>🎯 Enterprise Benefits</h3>
-                <div className="enterprise-benefits">
-                  {[
-                    { icon: "♾️", title: "Unlimited Everything", desc: "No caps on transcriptions, translations, or TTS" },
-                    { icon: "🎧", title: "Custom Neural Voices", desc: "Train voices with your brand's personality" },
-                    { icon: "🔌", title: "Full API Access", desc: "REST API for seamless integration" },
-                    { icon: "📊", title: "Team Analytics", desc: "Usage tracking across your organization" },
-                    { icon: "🛡️", title: "SLA & Support", desc: "99.9% uptime with dedicated account manager" },
-                    { icon: "🔒", title: "Data Privacy", desc: "SOC2 compliant, on-premise option available" },
-                  ].map((b) => (
-                    <div key={b.title} className="benefit-item">
-                      <span style={{ fontSize: "1.3rem" }}>{b.icon}</span>
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{b.title}</div>
-                        <div style={{ fontSize: "0.8rem", color: "var(--text-dim)" }}>{b.desc}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+            <div className="contact-info-item">
+              <span className="about-card-icon"><ClockIcon size={20} color="#FF8000" /></span>
+              <div>
+                <h3>Response time</h3>
+                <p>We usually reply within 24 hours, Mon–Fri.</p>
               </div>
+            </div>
+            <div className="contact-info-item">
+              <span className="about-card-icon"><ShieldIcon size={20} color="#FF8000" /></span>
+              <div>
+                <h3>No spam</h3>
+                <p>Your details are used only to reply to you.</p>
+              </div>
+            </div>
+            <div className="contact-socials">
+              {SOCIALS.map(({ label, href, Icon }) => (
+                <a key={label} href={href} target="_blank" rel="noopener noreferrer" aria-label={label} className="contact-social">
+                  <Icon size={18} color="currentColor" />
+                </a>
+              ))}
+            </div>
+          </aside>
 
-              {/* Contact Form */}
-              <form className="glass-card fade-in" onSubmit={handleSubmit} noValidate>
-                <h3 style={{ marginBottom: 20 }}>📬 Send Us a Message</h3>
-
-                <div className="form-grid">
-                  <div>
-                    <label className="form-label">Full Name *</label>
-                    <input
-                      type="text"
-                      className="select-input"
-                      placeholder="Your full name"
-                      value={formData.name}
-                      onChange={(e) => handleChange("name", e.target.value)}
-                      disabled={loading}
-                      autoComplete="name"
-                      maxLength={120}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="form-label">Work Email *</label>
-                    <input
-                      type="email"
-                      className="select-input"
-                      placeholder="you@company.com"
-                      value={formData.email}
-                      onChange={(e) => handleChange("email", e.target.value)}
-                      disabled={loading}
-                      autoComplete="email"
-                      maxLength={200}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="form-label">Company</label>
-                    <input
-                      type="text"
-                      className="select-input"
-                      placeholder="Your company name"
-                      value={formData.company}
-                      onChange={(e) => handleChange("company", e.target.value)}
-                      disabled={loading}
-                      autoComplete="organization"
-                      maxLength={200}
-                    />
-                  </div>
-                  <div>
-                    <label className="form-label">Team Size</label>
-                    <select
-                      className="select-input"
-                      value={formData.teamSize}
-                      onChange={(e) => handleChange("teamSize", e.target.value)}
-                      disabled={loading}
-                    >
-                      <option value="">Select team size</option>
-                      <option value="1-5">1-5 members</option>
-                      <option value="6-20">6-20 members</option>
-                      <option value="21-50">21-50 members</option>
-                      <option value="51-100">51-100 members</option>
-                      <option value="100+">100+ members</option>
-                    </select>
-                  </div>
-                  <div style={{ gridColumn: "1 / -1" }}>
-                    <label className="form-label">How can we help? *</label>
-                    <textarea
-                      className="textarea-input"
-                      style={{ minHeight: 140 }}
-                      placeholder="Tell us about your use case, expected volume, and any special requirements..."
-                      value={formData.message}
-                      onChange={(e) => handleChange("message", e.target.value)}
-                      disabled={loading}
-                      maxLength={4000}
-                      required
-                    />
-                    <div className="char-count">{formData.message.length} / 4,000 characters</div>
-                  </div>
+          {/* Form column */}
+          <div className="contact-form-card">
+            {status === "sent" ? (
+              <div style={{ textAlign: "center", padding: "40px 8px" }}>
+                <CheckCircleIcon size={56} color="#16a34a" />
+                <h2 style={{ margin: "16px 0 8px", color: "var(--color-landing-text)" }}>Message sent</h2>
+                <p style={{ color: "var(--color-landing-text-dim)" }}>
+                  Thanks for reaching out — we&apos;ll get back to you soon.
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={onSubmit} noValidate>
+                <div className="contact-field">
+                  <label htmlFor="c-name">Name</label>
+                  <input id="c-name" type="text" value={form.name}
+                    onChange={(e) => set("name", e.target.value)} placeholder="Your name" autoComplete="name" />
+                </div>
+                <div className="contact-field">
+                  <label htmlFor="c-email">Email</label>
+                  <input id="c-email" type="email" value={form.email}
+                    onChange={(e) => set("email", e.target.value)} placeholder="you@example.com" autoComplete="email" />
+                </div>
+                <div className="contact-field">
+                  <label htmlFor="c-subject">Subject <span className="contact-optional">(optional)</span></label>
+                  <input id="c-subject" type="text" value={form.subject}
+                    onChange={(e) => set("subject", e.target.value)} placeholder="What's this about?" />
+                </div>
+                <div className="contact-field">
+                  <label htmlFor="c-message">Message</label>
+                  <textarea id="c-message" value={form.message}
+                    onChange={(e) => set("message", e.target.value)} placeholder="Tell us more..." rows={6} />
                 </div>
 
-                {/*
-                  Honeypot field — hidden from humans (off-screen + aria-hidden + tabIndex=-1)
-                  but real DOM input that bots will eagerly fill in. Server drops any
-                  submission where this is non-empty.
-                */}
-                <div
-                  aria-hidden="true"
-                  style={{
-                    position: "absolute",
-                    left: "-9999px",
-                    top: "-9999px",
-                    width: 1,
-                    height: 1,
-                    overflow: "hidden",
-                  }}
-                >
-                  <label>
-                    Website (leave blank)
-                    <input
-                      type="text"
-                      tabIndex={-1}
-                      autoComplete="off"
-                      value={website}
-                      onChange={(e) => setWebsite(e.target.value)}
-                      name="website"
-                    />
-                  </label>
-                </div>
+                {error && <p className="contact-error" role="alert">{error}</p>}
 
-                {error && (
-                  <div
-                    className="badge badge-error"
-                    style={{ padding: "12px 18px", fontSize: "0.9rem", marginTop: 16, width: "100%", justifyContent: "flex-start" }}
-                  >
-                    ❌ {error}
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  className="btn btn-primary btn-large"
-                  style={{ width: "100%", marginTop: 24 }}
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <><span className="spinner"></span> Sending...</>
-                  ) : (
-                    "📨 Send Message"
-                  )}
+                <button type="submit" className="btn btn-primary" disabled={status === "sending"}
+                  style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                  <SendIcon size={16} color="#0a0a0a" />
+                  {status === "sending" ? "Sending…" : "Send message"}
                 </button>
-
-                <p style={{ textAlign: "center", fontSize: "0.82rem", color: "var(--text-muted)", marginTop: 12 }}>
-                  We typically respond within 24 hours • No spam, ever
-                </p>
               </form>
-
-              {/* Alternative contact */}
-              <div className="glass-card fade-in" style={{ marginTop: 24, textAlign: "center" }}>
-                <h3 style={{ marginBottom: 12 }}>📞 Prefer to talk?</h3>
-                <p style={{ color: "var(--text-dim)", marginBottom: 4 }}>
-                  Email us directly: <strong style={{ color: "var(--accent)" }}>enterprise@transtts.ai</strong>
-                </p>
-                <p style={{ color: "var(--text-dim)" }}>
-                  Or schedule a call: <strong style={{ color: "var(--accent)" }}>Mon-Fri, 10AM - 6PM IST</strong>
-                </p>
-              </div>
-
-              <div style={{ textAlign: "center", marginTop: 24 }}>
-                <Link href="/pricing" className="btn btn-ghost">← Back to Pricing</Link>
-              </div>
-            </>
-          )}
+            )}
+          </div>
         </div>
       </main>
-    </>
+
+      <LandingFooter />
+    </div>
   );
-}
-
-/* -------------------------------------------------------------------- */
-/* Submission strategies                                                 */
-/* -------------------------------------------------------------------- */
-
-interface FormPayload {
-  name: string;
-  email: string;
-  company: string;
-  teamSize: string;
-  message: string;
-}
-
-/**
- * POST to our own /api/contact route.
- * Persists to ContactInquiry, optionally fires admin + auto-reply emails
- * via Resend (see CONTACT_SETUP.md). Throws on non-2xx.
- */
-async function submitToBackend(formData: FormPayload, website: string): Promise<void> {
-  const res = await fetch("/api/contact", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...formData, website }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data?.error || `Failed to send message (${res.status})`);
-  }
-}
-
-/**
- * POST to FormSubmit.co's AJAX endpoint.
- *
- * No signup is required — the first time submissions hit a new email,
- * FormSubmit sends an activation link to that mailbox. After clicking
- * the link once, every subsequent submission is delivered immediately.
- *
- * `_honey` is FormSubmit's built-in honeypot, so we forward the same
- * `website` value the rest of the app already collects.
- */
-async function submitToFormSubmit(
-  emailOrAlias: string,
-  formData: FormPayload,
-  website: string
-): Promise<void> {
-  const url = `https://formsubmit.co/ajax/${encodeURIComponent(emailOrAlias)}`;
-  const subject = `New TransTTS contact: ${formData.name}${
-    formData.company ? ` (${formData.company})` : ""
-  }`;
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      name: formData.name,
-      email: formData.email,
-      company: formData.company,
-      "Team size": formData.teamSize,
-      message: formData.message,
-      _subject: subject,
-      _replyto: formData.email,
-      _captcha: "false",
-      _template: "table",
-      _honey: website,
-    }),
-  });
-
-  const data = await res.json().catch(() => ({}));
-  const succeeded =
-    res.ok && (data?.success === "true" || data?.success === true);
-
-  if (!succeeded) {
-    const detail =
-      typeof data?.message === "string"
-        ? data.message
-        : `FormSubmit error (${res.status})`;
-    throw new Error(detail);
-  }
 }

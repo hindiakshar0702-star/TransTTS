@@ -1,16 +1,18 @@
 "use client";
+import { ReactNode } from "react";
+import { UploadIcon, CogIcon, MicIcon, CheckCircleIcon, CheckIcon } from "@/components/Icons";
 
 interface Step {
   id: string;
   label: string;
-  icon: string;
+  icon: ReactNode;
 }
 
 const STEPS: Step[] = [
-  { id: "upload", label: "Upload", icon: "📤" },
-  { id: "process", label: "Processing", icon: "⚙️" },
-  { id: "transcribe", label: "Transcribing", icon: "🎤" },
-  { id: "done", label: "Complete", icon: "✅" },
+  { id: "upload", label: "Upload", icon: <UploadIcon size={16} color="currentColor" /> },
+  { id: "process", label: "Processing", icon: <CogIcon size={16} color="currentColor" /> },
+  { id: "transcribe", label: "Transcribing", icon: <MicIcon size={16} color="currentColor" /> },
+  { id: "done", label: "Complete", icon: <CheckCircleIcon size={16} color="currentColor" /> },
 ];
 
 interface ProgressTrackerProps {
@@ -37,7 +39,7 @@ export default function ProgressTracker({ progress, status }: ProgressTrackerPro
             }`}
           >
             <div className="step-circle">
-              {i < currentStep ? "✓" : step.icon}
+              {i < currentStep ? <CheckIcon size={14} color="currentColor" /> : step.icon}
             </div>
             <span className="step-label">{step.label}</span>
             {i < STEPS.length - 1 && (
