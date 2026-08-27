@@ -30,8 +30,8 @@ export default function BentoGrid() {
                   <MicIcon size={18} color="#0a0a0a" />
                 </div>
                 <div className="user-card-info">
-                  <h4>Savannah Nguyen</h4>
-                  <p>Uploaded 3 podcasts today</p>
+                  <h4>Audio to text</h4>
+                  <p>Timestamped transcripts with Whisper AI</p>
                 </div>
               </div>
               <div className="user-card">
@@ -39,8 +39,8 @@ export default function BentoGrid() {
                   <GlobeIcon size={18} color="#5c62ec" />
                 </div>
                 <div className="user-card-info">
-                  <h4>Brooklyn Simmons</h4>
-                  <p>Translated to 5 languages</p>
+                  <h4>Translate</h4>
+                  <p>Hindi, English &amp; 25+ languages</p>
                 </div>
               </div>
             </div>

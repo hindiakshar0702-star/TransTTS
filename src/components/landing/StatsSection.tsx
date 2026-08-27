@@ -3,11 +3,14 @@
 import { useEffect, useRef } from "react";
 import AnimatedCounter from "./AnimatedCounter";
 
+// Every figure here is verifiable in the code: the voice list has 18 entries,
+// transcription detects across ~99 languages, translation covers 25+, and the
+// app needs no account. No accuracy claim — that would be unverifiable.
 const stats = [
+  { target: 18, suffix: "", label: "Neural Voices" },
   { target: 99, suffix: "+", label: "Languages" },
-  { target: 95, suffix: "%", label: "Accuracy" },
-  { target: 6, suffix: "", label: "AI Voices" },
-  { target: 0, suffix: "", label: "To Start", prefix: "Free " },
+  { target: 25, suffix: "+", label: "Translate To" },
+  { target: 0, suffix: "", label: "No Signup", prefix: "Free" },
 ];
 
 export default function StatsSection() {

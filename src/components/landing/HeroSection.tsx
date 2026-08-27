@@ -55,31 +55,30 @@ export default function HeroSection() {
               </div>
             </div>
 
-            {/* Bottom Bento Sub-Grid matching Image 1: 15 Million+ on Left, Stacked User Cards on Right */}
+            {/* Left: a true capability figure. Right: what the tool does,
+                stated as features rather than invented users. */}
             <div className="hero-bento-subgrid">
-              {/* Left: 15 Million+ Bento Card */}
               <div className="stat-bento-card">
                 <div className="stat-bento-header">
-                  <h3 className="stat-bento-title">15 Million+</h3>
+                  <h3 className="stat-bento-title">18 voices</h3>
                   <div className="live-status-badge">
                     <span className="live-dot" />
-                    <span className="live-text">Live</span>
+                    <span className="live-text">Free</span>
                   </div>
                 </div>
                 <p className="stat-bento-desc">
-                  words transcribed<br />with our AI engine
+                  natural AI voices<br />across 15+ languages
                 </p>
               </div>
 
-              {/* Right: Stacked User Cards with Vector Lucide Icon Circles */}
               <div className="user-cards-stack">
                 <div className="bento-user-card">
                   <div className="user-card-avatar-circle">
-                    <MicIcon size={18} color="#5c62ec" />
+                    <VolumeIcon size={18} color="#5c62ec" />
                   </div>
                   <div className="user-card-details">
-                    <h4 className="user-card-name">Priya Sharma</h4>
-                    <p className="user-card-role">Content creator using TransTTS daily</p>
+                    <h4 className="user-card-name">Text to Speech</h4>
+                    <p className="user-card-role">Hindi, English &amp; multilingual voices</p>
                   </div>
                 </div>
                 <div className="bento-user-card">
@@ -87,8 +86,8 @@ export default function HeroSection() {
                     <GlobeIcon size={18} color="#5c62ec" />
                   </div>
                   <div className="user-card-details">
-                    <h4 className="user-card-name">Alex Chen</h4>
-                    <p className="user-card-role">Translator & podcaster</p>
+                    <h4 className="user-card-name">Transcribe &amp; Translate</h4>
+                    <p className="user-card-role">Whisper AI across 99+ languages</p>
                   </div>
                 </div>
               </div>
@@ -120,10 +119,10 @@ export default function HeroSection() {
                     <div style={{ fontSize: "0.6rem", color: "#047857" }}>● Online</div>
                   </div>
 
-                  {/* Main stat */}
+                  {/* Sample of the real TTS input state, not a global metric. */}
                   <div className="showcase-balance">
-                    <div className="showcase-balance-label">Words Processed</div>
-                    <div className="showcase-balance-value">15,482,930</div>
+                    <div className="showcase-balance-label">Characters</div>
+                    <div className="showcase-balance-value">0 / 5,000</div>
                   </div>
 
                   {/* Quick actions */}
