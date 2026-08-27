@@ -93,11 +93,14 @@ export const metadata: Metadata = {
       "max-video-preview": -1,
     },
   },
-  // Search Console verification. Set GOOGLE_SITE_VERIFICATION to the token from
-  // the "HTML tag" method; omitted entirely when unset.
-  ...(process.env.GOOGLE_SITE_VERIFICATION
-    ? { verification: { google: process.env.GOOGLE_SITE_VERIFICATION } }
-    : {}),
+  // Google Search Console verification (the "HTML tag" method). The token is
+  // public by design — it ships in the page HTML — so it is safe to keep here,
+  // with the env var left as an override for other deployments.
+  verification: {
+    google:
+      process.env.GOOGLE_SITE_VERIFICATION ||
+      "6VY_og5mmGhiSilrehyjiZEuBtV2_nDx-DI3R-QXbYM",
+  },
   appleWebApp: {
     capable: true,
     title: SITE_NAME,
