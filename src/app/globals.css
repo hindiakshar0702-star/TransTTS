@@ -843,7 +843,6 @@ select.select-input:focus {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 2px;
   height: 64px;
   padding: 8px 2px;
   cursor: pointer;
@@ -854,9 +853,14 @@ select.select-input:focus {
 }
 
 .clip-wave-bar {
-  flex: 1 1 0;
-  min-width: 2px;
-  max-width: 5px;
+  /* A fixed, whole-pixel width — never flex-grow. A flexible bar resolves to a
+     fractional width (56 bars across ~320px landed at 3.73–3.75px), and on a
+     fractional-DPR display those fractions snap to the physical pixel grid
+     unevenly, so the bars render visibly thick-and-thin. A whole number cannot.
+     justify-content: space-between spreads the slack into the gaps instead,
+     where uneven rounding does not read. */
+  flex: 0 0 3px;
+  width: 3px;
   border-radius: 999px;
   background: var(--border2);
   transition: background-color 0.18s ease, transform 0.18s ease;

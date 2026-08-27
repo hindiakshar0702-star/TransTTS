@@ -139,6 +139,31 @@ test.describe("clip silhouette", () => {
     expect(atFloor).toBeLessThan(heights.length * 0.6);
   });
 
+  test("every bar is the same width, so none reads as thicker than its neighbours", async ({ page }) => {
+    await page.goto("/tts");
+    await page.locator("textarea").first().fill("A line long enough to fill the whole strip of bars.");
+    await page.getByRole("button", { name: /generate voice/i }).click();
+
+    const bars = page.locator(".clip-wave-bar");
+    await expect(bars.first()).toBeVisible({ timeout: 60_000 });
+
+    // The invariant is checked on computed style, not rendered geometry. The
+    // bug only shows on a fractional device pixel ratio, and the test runs at
+    // DPR 1 where a fractional CSS width still snaps to a whole device pixel —
+    // so measuring the rendered width here would pass even on the broken flex
+    // version. What actually prevents the thick-and-thin look is that the bar
+    // is not flex-grown and its width is a whole number of CSS pixels; that is
+    // what holds at any DPR, and that is what this asserts.
+    const style = await bars.first().evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { flexGrow: cs.flexGrow, width: cs.width };
+    });
+
+    expect(style.flexGrow).toBe("0");
+    const px = parseFloat(style.width);
+    expect(Number.isInteger(px)).toBe(true);
+  });
+
   test("played and unplayed are told apart, despite the landing page's identical class name", async ({ page }) => {
     await page.goto("/tts");
     await page.locator("textarea").first().fill("Another line to generate and then scrub through.");
